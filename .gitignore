@@ -1,0 +1,49 @@
+# ── Variables de entorno — NUNCA al repo ──────────────────────────────────────
+.env
+.env.local
+.env.*.local
+backend/.env
+functions/.env
+frontend/.env
+
+# ── Firebase credentials — NUNCA al repo ──────────────────────────────────────
+serviceAccountKey.json
+*serviceAccount*.json
+firebase-credentials.json
+*.credential.json
+
+# ── Node / Frontend ────────────────────────────────────────────────────────────
+node_modules/
+frontend/dist/
+frontend/.vite/
+
+# ── Python / Backend + Functions ──────────────────────────────────────────────
+__pycache__/
+*.py[cod]
+*.pyo
+.venv/
+venv/
+env/
+*.egg-info/
+.pytest_cache/
+dist/
+build/
+functions/.python_requirements/
+
+# ── Firebase emulador ──────────────────────────────────────────────────────────
+.firebase/
+firebase-debug.log
+firestore-debug.log
+ui-debug.log
+database-debug.log
+pubsub-debug.log
+
+# ── IDE ───────────────────────────────────────────────────────────────────────
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# ── OS ────────────────────────────────────────────────────────────────────────
+.DS_Store
+Thumbs.db

@@ -1,0 +1,18 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // Cada usuario solo puede leer y escribir su propia subcolección.
+    // La estructura es: /users/{uid}/portfolio, /users/{uid}/catalysts, etc.
+    match /users/{uid}/{document=**} {
+      allow read, write: if request.auth != null && request.auth.uid == uid;
+    }
+
+    // Cotizaciones de mercado: lectura para cualquier usuario autenticado.
+    // Solo el backend (Firebase Admin SDK) o Cloud Functions pueden escribir.
+    match /market/{document=**} {
+      allow read: if request.auth != null;
+      allow write: if false;
+    }
+  }
+}

@@ -1,0 +1,1244 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0">
+<title>MiCartera · V1</title>
+<!--
+  cartera_app_v5b.html
+  Versión pública / demo del dashboard de cartera.
+  TODOS los datos son ficticios y de ejemplo.
+  Seguro para repositorio público.
+-->
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=DM+Mono:ital,wght@0,300;0,400;0,500&family=Syne:wght@600;700;800&display=swap" rel="stylesheet">
+<style>
+/* ── Variables globales de diseño ── */
+:root {
+  --bg:#080a0d; --surface:#0e1117; --surface2:#141920; --surface3:#1a2030;
+  --border:#1c2535; --border2:#243040;
+  --accent:#00e5a0; --accent2:#f7b731; --accent3:#4a9eff;
+  --red:#ff4d6d; --purple:#c084fc;
+  --text:#dde4ed; --muted:#4a5a6e; --muted2:#6a7e94;
+  --buy:#00e5a0; --hold:#4a9eff; --sell:#ff4d6d; --warn:#f7b731;
+}
+*{margin:0;padding:0;box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+body{background:var(--bg);color:var(--text);font-family:'DM Mono',monospace;min-height:100vh;overflow-x:hidden;font-size:13px}
+
+/* Grilla de fondo decorativa */
+body::before{content:'';position:fixed;inset:0;background-image:linear-gradient(rgba(0,229,160,.025) 1px,transparent 1px),linear-gradient(90deg,rgba(0,229,160,.025) 1px,transparent 1px);background-size:48px 48px;pointer-events:none;z-index:0}
+
+.app{position:relative;z-index:1;max-width:720px;margin:0 auto;padding:0 0 80px}
+
+/* ── HEADER ── */
+.header{padding:18px 16px 12px}
+.header-top{display:flex;justify-content:space-between;align-items:flex-start}
+.brand{font-family:'Syne',sans-serif;font-size:21px;font-weight:800;letter-spacing:-.03em;color:#fff;line-height:1}
+.brand span{color:var(--accent)}
+.brand-sub{font-size:9px;color:var(--muted);text-transform:uppercase;letter-spacing:.15em;margin-top:4px}
+
+/* Chip de riesgo país */
+.rp-chip{display:inline-flex;align-items:center;gap:5px;background:rgba(255,77,109,.08);border:1px solid rgba(255,77,109,.2);border-radius:99px;padding:3px 8px;font-size:9px;color:var(--red);margin-top:5px}
+.rp-dot{width:5px;height:5px;border-radius:50%;background:var(--red);animation:pulse 2s infinite}
+@keyframes pulse{0%,100%{opacity:1}50%{opacity:.3}}
+
+/* ── HERO — dos columnas ── */
+.hero-block{display:grid;grid-template-columns:1fr 1fr;gap:10px;padding:0 16px;margin-bottom:10px}
+@media(max-width:480px){.hero-block{grid-template-columns:1fr}}
+
+/* ── CARD TOTAL VALORIZADO ── */
+.total-card{background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:14px 16px}
+.total-top{display:flex;align-items:center;justify-content:space-between;margin-bottom:10px;gap:6px;flex-wrap:wrap}
+.total-top-left{display:flex;align-items:center;gap:8px}
+.total-label{font-size:10px;color:var(--muted2);letter-spacing:.05em}
+
+/* Botón ojo — toggle privacidad */
+.eye-btn{background:none;border:none;cursor:pointer;color:var(--muted);font-size:14px;padding:2px 4px;border-radius:6px;transition:color .2s;line-height:1;display:flex;align-items:center}
+.eye-btn:hover{color:var(--text)}
+
+/* Selector de moneda */
+.currency-btns{display:flex;gap:2px;background:var(--surface2);border:1px solid var(--border);border-radius:8px;padding:3px}
+.curr-btn{background:none;border:none;color:var(--muted2);font-family:'DM Mono',monospace;font-size:9px;font-weight:500;padding:4px 6px;border-radius:5px;cursor:pointer;transition:all .15s;letter-spacing:.04em;text-transform:uppercase}
+.curr-btn.active{background:var(--surface3);color:#fff;font-weight:700}
+
+.total-amount{font-family:'IBM Plex Mono',monospace;font-weight:600;font-size:clamp(15px,4vw,22px);color:#fff;line-height:1.1;letter-spacing:-.01em;margin-bottom:3px;transition:opacity .2s;word-break:break-all}
+.total-sub{font-size:9px;color:var(--muted);margin-bottom:10px;min-height:13px}
+.total-rend{display:flex;align-items:center;justify-content:space-between;border-top:1px solid var(--border);padding-top:8px}
+.rend-label{font-size:9px;color:var(--muted)}
+.rend-val{display:inline-flex;align-items:center;gap:4px;font-size:11px;font-weight:600;color:var(--buy);background:rgba(0,229,160,.08);border:1px solid rgba(0,229,160,.15);border-radius:99px;padding:2px 8px}
+.rend-val.neg{color:var(--red);background:rgba(255,77,109,.08);border-color:rgba(255,77,109,.15)}
+
+/* ── CARD DISTRIBUCIÓN ── */
+.dist-card{background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:14px 16px}
+.dist-top{display:flex;align-items:center;justify-content:space-between;margin-bottom:10px}
+.dist-label{font-size:10px;color:var(--muted2);letter-spacing:.05em}
+.dist-toggle{display:flex;gap:2px;background:var(--surface2);border:1px solid var(--border);border-radius:8px;padding:3px}
+.dist-btn{background:none;border:none;color:var(--muted2);font-family:'DM Mono',monospace;font-size:9px;padding:4px 6px;border-radius:5px;cursor:pointer;transition:all .15s;text-transform:uppercase;letter-spacing:.04em}
+.dist-btn.active{background:var(--surface3);color:#fff;font-weight:700}
+.dist-body{display:flex;flex-direction:column;gap:8px}
+.dist-donut-row{display:flex;align-items:flex-start;gap:10px}
+.dist-donut-col{display:flex;flex-direction:column;align-items:flex-start;gap:4px;flex-shrink:0}
+.dist-donut{cursor:pointer}
+.dist-legend{flex:1;display:flex;flex-direction:column;gap:4px;overflow:hidden}
+.dl-item{display:flex;align-items:center;justify-content:space-between;gap:4px;cursor:pointer;padding:2px 3px;border-radius:4px;transition:background .15s}
+.dl-item:hover{background:rgba(255,255,255,.03)}
+.dl-left{display:flex;align-items:center;gap:5px;min-width:0}
+.dl-dot{width:6px;height:6px;border-radius:50%;flex-shrink:0}
+.dl-name{font-size:9px;color:var(--muted2);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.dl-pct{font-size:10px;font-weight:600;color:var(--text);flex-shrink:0}
+
+/* Tooltip del donut — aparece debajo del SVG */
+.donut-label{display:flex;align-items:center;gap:5px;min-height:16px;opacity:0;transition:opacity .2s}
+.donut-label.visible{opacity:1}
+.donut-label-dot{width:7px;height:7px;border-radius:50%;flex-shrink:0}
+.donut-label-pct{font-family:'IBM Plex Mono',monospace;font-size:11px;font-weight:600;color:#fff}
+.donut-label-name{font-size:9px;color:var(--muted2)}
+
+/* ── KPIs MINI ── */
+.kpis-mini{display:grid;grid-template-columns:repeat(2,1fr);gap:8px;padding:0 16px;margin-bottom:10px}
+.kpi{background:var(--surface);border:1px solid var(--border);border-radius:10px;padding:11px 13px}
+.kpi-label{font-size:9px;color:var(--muted);text-transform:uppercase;letter-spacing:.1em;margin-bottom:3px}
+.kpi-val{font-family:'IBM Plex Mono',monospace;font-size:14px;font-weight:600;color:#fff;line-height:1}
+.kpi-val.pos{color:var(--buy)} .kpi-val.neg{color:var(--red)} .kpi-val.warn{color:var(--warn)}
+.kpi-sub{font-size:9px;color:var(--muted);margin-top:2px}
+
+/* ── TABS ── */
+.tabs-bar{position:sticky;top:0;z-index:100;background:var(--bg);border-bottom:1px solid var(--border);padding:0 12px;display:flex;margin-bottom:16px}
+.tab-btn{flex:1;background:none;border:none;border-bottom:2px solid transparent;color:var(--muted);font-family:'DM Mono',monospace;font-size:9px;text-transform:uppercase;letter-spacing:.08em;padding:11px 2px;cursor:pointer;transition:color .2s,border-color .2s;white-space:nowrap}
+.tab-btn.active{color:var(--accent);border-bottom-color:var(--accent)}
+.tab-content{display:none;padding:0 16px}
+.tab-content.active{display:block}
+
+/* ── TÍTULO DE SECCIÓN ── */
+.sec-title{font-family:'Syne',sans-serif;font-size:10px;font-weight:600;letter-spacing:.18em;text-transform:uppercase;color:var(--muted);margin:20px 0 10px;padding-left:10px;border-left:2px solid var(--accent);display:flex;align-items:center;justify-content:space-between}
+.sec-count{font-family:'DM Mono',monospace;font-size:9px;color:var(--muted);font-weight:400}
+
+/* ── FILAS DE TICKER (acordeón) ── */
+.ticker-list{display:flex;flex-direction:column;gap:6px;margin-bottom:8px}
+.ticker-row{background:var(--surface);border:1px solid var(--border);border-radius:10px;overflow:hidden;transition:border-color .2s}
+.ticker-row.expanded{border-color:var(--border2)}
+.tr-header{display:flex;align-items:center;padding:11px 12px;gap:8px;cursor:pointer;user-select:none}
+
+/* Barra de color lateral según señal táctica */
+.tr-bar{width:3px;height:28px;border-radius:99px;flex-shrink:0}
+.tr-bar.buy{background:var(--buy)} .tr-bar.hold{background:var(--hold)} .tr-bar.sell{background:var(--sell)} .tr-bar.warn{background:var(--warn)}
+
+.tr-left{flex:1;min-width:0}
+.tr-ticker{font-family:'Syne',sans-serif;font-size:14px;font-weight:800;color:#fff;letter-spacing:-.01em;line-height:1}
+.tr-name{font-size:9px;color:var(--muted);margin-top:2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.tr-mid{text-align:right;flex-shrink:0}
+.tr-rend{font-family:'IBM Plex Mono',monospace;font-size:12px;font-weight:600}
+.tr-rend.pos{color:var(--buy)} .tr-rend.neg{color:var(--red)}
+.tr-right{display:flex;align-items:center;gap:6px;flex-shrink:0}
+
+/* Badges de señal táctica */
+.tr-badge{font-size:8px;font-weight:500;padding:3px 6px;border-radius:99px;text-transform:uppercase;letter-spacing:.06em;white-space:nowrap}
+.badge-buy{background:rgba(0,229,160,.1);color:var(--buy);border:1px solid rgba(0,229,160,.2)}
+.badge-hold{background:rgba(74,158,255,.1);color:var(--hold);border:1px solid rgba(74,158,255,.2)}
+.badge-sell{background:rgba(255,77,109,.1);color:var(--sell);border:1px solid rgba(255,77,109,.2)}
+.badge-warn{background:rgba(247,183,49,.1);color:var(--warn);border:1px solid rgba(247,183,49,.2)}
+
+.tr-chevron{font-size:10px;color:var(--muted);transition:transform .2s;flex-shrink:0}
+.expanded .tr-chevron{transform:rotate(180deg)}
+
+/* Detalle expandido del ticker */
+.tr-detail{display:none;border-top:1px solid var(--border);padding:12px 12px 14px;background:var(--surface2)}
+.expanded .tr-detail{display:block}
+.tr-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:7px 6px;margin-bottom:10px}
+.tg-label{font-size:8px;color:var(--muted);text-transform:uppercase;letter-spacing:.08em;margin-bottom:2px}
+.tg-val{font-family:'IBM Plex Mono',monospace;font-size:11px;color:var(--text);font-weight:500}
+.tg-val.pos{color:var(--buy)} .tg-val.neg{color:var(--red)} .tg-val.warn{color:var(--warn)}
+.tr-tesis{font-size:10px;color:var(--muted2);line-height:1.6;padding-top:8px;border-top:1px solid var(--border);margin-top:4px}
+.tr-links{display:flex;gap:6px;margin-top:10px;flex-wrap:wrap}
+.tr-link{display:inline-flex;align-items:center;gap:4px;font-size:9px;color:var(--accent3);text-decoration:none;background:rgba(74,158,255,.06);border:1px solid rgba(74,158,255,.15);padding:4px 9px;border-radius:99px}
+.tr-event-chip{display:inline-flex;align-items:center;gap:4px;font-size:9px;color:var(--warn);background:rgba(247,183,49,.06);border:1px solid rgba(247,183,49,.15);padding:3px 8px;border-radius:99px;margin-top:8px}
+
+/* ── STRESS TEST ── */
+.stress-row{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin:16px 0}
+.stress-card{background:var(--surface);border:1px solid var(--border);border-radius:10px;padding:14px}
+.stress-card h4{font-family:'Syne',sans-serif;font-size:11px;font-weight:600;margin-bottom:4px}
+.stress-drop{font-family:'IBM Plex Mono',monospace;font-size:26px;font-weight:600;line-height:1;margin-bottom:6px}
+.stress-card.danger .stress-drop{color:var(--red)} .stress-card.warn .stress-drop{color:var(--warn)}
+.stress-desc{font-size:9px;color:var(--muted2);line-height:1.6}
+
+/* ── BLOQUE LIQUIDEZ ── */
+.liq-block{background:var(--surface2);border:1px solid var(--border2);border-radius:10px;padding:16px;display:flex;align-items:center;gap:16px;margin-bottom:16px}
+.liq-num{font-family:'IBM Plex Mono',monospace;font-size:30px;font-weight:600;color:var(--accent);line-height:1;flex-shrink:0}
+.liq-label{font-size:9px;color:var(--muted);text-transform:uppercase;letter-spacing:.1em;margin-top:3px}
+.liq-desc{font-size:10px;color:var(--muted2);line-height:1.6}
+.liq-desc strong{color:var(--text)}
+
+/* ── CARDS FUNDAMENTAL ── */
+.fund-grid{display:flex;flex-direction:column;gap:8px;margin-bottom:8px}
+.fund-card{background:var(--surface);border:1px solid var(--border);border-radius:10px;padding:14px;position:relative;overflow:hidden}
+/* Borde superior de color según sentimiento */
+.fund-card::before{content:'';position:absolute;top:0;left:0;right:0;height:2px}
+.fund-card.bull::before{background:var(--buy)} .fund-card.bear::before{background:var(--red)} .fund-card.neutral::before{background:var(--hold)}
+.fc-top{display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:8px;gap:8px}
+.fc-ticker{font-family:'Syne',sans-serif;font-size:16px;font-weight:800;color:#fff;letter-spacing:-.02em}
+.fc-name{font-size:9px;color:var(--muted);margin-top:1px}
+.fc-ebitda-row{display:flex;gap:6px;flex-wrap:wrap;background:rgba(0,229,160,.04);border:1px solid rgba(0,229,160,.1);border-radius:8px;padding:8px 10px;margin-bottom:8px}
+.fc-ebitda-item{text-align:center;flex:1;min-width:55px}
+.fc-ebitda-label{font-size:7px;color:var(--accent);text-transform:uppercase;letter-spacing:.1em}
+.fc-ebitda-val{font-family:'IBM Plex Mono',monospace;font-size:11px;font-weight:600;color:var(--text);margin-top:2px}
+.fc-ratios{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:8px}
+.fc-ratio-label{font-size:8px;color:var(--muted);text-transform:uppercase;letter-spacing:.06em}
+.fc-ratio-val{font-family:'IBM Plex Mono',monospace;font-size:11px;font-weight:500;color:var(--text);margin-top:1px}
+.fc-ratio-val.good{color:var(--buy)} .fc-ratio-val.bad{color:var(--red)} .fc-ratio-val.mid{color:var(--warn)}
+.fc-tesis{font-size:10px;color:var(--muted2);line-height:1.6;margin-bottom:8px}
+.fc-scenarios{display:grid;grid-template-columns:repeat(3,1fr);gap:6px;border-top:1px solid var(--border);padding-top:8px}
+.fc-sce-label{font-size:8px;color:var(--muted);text-transform:uppercase;letter-spacing:.06em;text-align:center}
+.fc-sce-val{font-family:'IBM Plex Mono',monospace;font-size:11px;font-weight:500;margin-top:2px;text-align:center}
+.fc-sce-val.bear{color:var(--red)} .fc-sce-val.base{color:var(--warn)} .fc-sce-val.bull{color:var(--buy)}
+
+/* ── TIMELINE DE CATALIZADORES ── */
+.timeline{position:relative;padding-left:24px;margin-bottom:24px}
+.timeline::before{content:'';position:absolute;left:7px;top:8px;bottom:8px;width:1px;background:linear-gradient(to bottom,var(--accent),var(--border),transparent)}
+.tl-item{position:relative;margin-bottom:14px}
+.tl-dot{position:absolute;left:-20px;top:6px;width:8px;height:8px;border-radius:50%;border:2px solid var(--bg)}
+.tl-dot.urgent{background:var(--red);box-shadow:0 0 8px rgba(255,77,109,.5)}
+.tl-dot.near{background:var(--warn)} .tl-dot.far{background:var(--muted)} .tl-dot.structural{background:var(--hold)}
+.tl-card{background:var(--surface);border:1px solid var(--border);border-radius:10px;padding:12px 14px}
+.tl-date{font-size:9px;color:var(--muted);text-transform:uppercase;letter-spacing:.1em;margin-bottom:4px}
+.tl-evento{font-size:12px;color:var(--text);font-weight:500;margin-bottom:6px;line-height:1.4}
+.tl-tickers{display:flex;flex-wrap:wrap;gap:4px}
+.tl-chip{font-size:9px;font-family:'Syne',sans-serif;font-weight:700;padding:2px 7px;border-radius:99px;background:rgba(74,158,255,.08);border:1px solid rgba(74,158,255,.18);color:var(--accent3)}
+.tl-desc{font-size:10px;color:var(--muted2);margin-top:6px;line-height:1.5}
+
+/* ── TAB GRÁFICOS ── */
+.chart-selector{display:flex;flex-wrap:wrap;gap:6px;margin-bottom:16px}
+.chart-ticker-btn{background:var(--surface);border:1px solid var(--border);border-radius:8px;color:var(--muted2);font-family:'Syne',sans-serif;font-size:10px;font-weight:700;padding:6px 10px;cursor:pointer;transition:all .15s}
+.chart-ticker-btn.active{background:rgba(0,229,160,.1);border-color:var(--accent);color:var(--accent)}
+.chart-section{margin-bottom:20px}
+.chart-section-title{font-size:9px;color:var(--muted);text-transform:uppercase;letter-spacing:.12em;margin-bottom:8px;display:flex;align-items:center;gap:8px}
+.chart-section-title::after{content:'';flex:1;height:1px;background:var(--border)}
+.tv-widget-wrap{border-radius:10px;overflow:hidden;border:1px solid var(--border);background:var(--surface2);min-height:300px;position:relative}
+.tv-fallback{padding:20px;text-align:center}
+.tv-fallback-title{font-family:'Syne',sans-serif;font-size:13px;font-weight:700;color:#fff;margin-bottom:6px}
+.tv-fallback-sub{font-size:10px;color:var(--muted2);margin-bottom:16px;line-height:1.5}
+.tv-open-btn{display:inline-flex;align-items:center;justify-content:center;gap:8px;background:rgba(0,229,160,.08);border:1px solid rgba(0,229,160,.2);border-radius:10px;color:var(--accent);font-family:'DM Mono',monospace;font-size:11px;padding:12px 20px;cursor:pointer;text-decoration:none;width:100%;margin-bottom:8px;transition:background .2s}
+.tv-open-btn:hover{background:rgba(0,229,160,.14)}
+.tv-open-btn.fin{background:rgba(74,158,255,.08);border-color:rgba(74,158,255,.2);color:var(--accent3)}
+.tv-note{font-size:9px;color:var(--muted);text-align:center;margin-top:4px}
+
+/* ── MODAL ── */
+.modal-overlay{display:none;position:fixed;inset:0;background:rgba(0,0,0,.88);z-index:500;overflow-y:auto;padding:16px}
+.modal-overlay.open{display:block}
+.modal-box{background:var(--surface);border:1px solid var(--border2);border-radius:14px;max-width:680px;margin:0 auto;padding:22px;position:relative}
+.modal-close{position:absolute;top:14px;right:14px;background:var(--surface2);border:1px solid var(--border);border-radius:8px;color:var(--muted2);font-family:'DM Mono',monospace;font-size:10px;padding:5px 10px;cursor:pointer}
+.modal-title{font-family:'Syne',sans-serif;font-size:15px;font-weight:800;color:#fff;margin-bottom:4px}
+.modal-sub{font-size:9px;color:var(--muted);text-transform:uppercase;letter-spacing:.1em;margin-bottom:18px;border-bottom:1px solid var(--border);padding-bottom:12px}
+.ab-heading{font-family:'Syne',sans-serif;font-size:11px;font-weight:700;color:var(--accent);margin:16px 0 8px;padding-left:8px;border-left:2px solid var(--accent)}
+.ab-content{font-size:10px;color:var(--muted2);line-height:1.7}
+.ab-content table{width:100%;border-collapse:collapse;margin:8px 0}
+.ab-content td,.ab-content th{padding:6px 8px;border-bottom:1px solid var(--border);font-size:9px;text-align:left}
+.ab-content th{color:var(--muted);text-transform:uppercase;letter-spacing:.06em;font-weight:500}
+.td-pos{color:var(--buy)!important} .td-neg{color:var(--red)!important} .td-warn{color:var(--warn)!important}
+
+/* ── BOTONES DE ACCIÓN ── */
+.action-btns{display:flex;flex-direction:column;gap:8px;margin:16px 0}
+.action-btn{display:flex;align-items:center;gap:10px;background:var(--surface2);border:1px solid var(--border2);border-radius:10px;padding:13px 14px;cursor:pointer;color:var(--text);font-family:'DM Mono',monospace;font-size:11px;transition:border-color .2s,background .2s;width:100%;text-align:left}
+.action-btn:hover{border-color:var(--accent);background:rgba(0,229,160,.04)}
+.action-btn.paste-btn:hover{border-color:var(--accent3);background:rgba(74,158,255,.04)}
+.action-btn.deep-btn:hover{border-color:var(--purple);background:rgba(192,132,252,.04)}
+.ab-icon{font-size:15px;flex-shrink:0}
+.ab-title{font-size:11px;color:var(--text);margin-bottom:1px}
+.ab-sub{font-size:9px;color:var(--muted)}
+.ab-arrow{color:var(--muted);font-size:12px;margin-left:auto}
+.paste-area{display:none;background:var(--surface);border:1px solid var(--border2);border-radius:10px;padding:12px;margin-top:-4px;margin-bottom:8px}
+.paste-area.open{display:block}
+.paste-area textarea{width:100%;background:var(--bg);border:1px solid var(--border);border-radius:8px;color:var(--text);font-family:'DM Mono',monospace;font-size:10px;padding:10px;height:90px;resize:vertical;outline:none}
+.paste-submit{margin-top:8px;background:rgba(74,158,255,.1);border:1px solid rgba(74,158,255,.25);border-radius:8px;color:var(--accent3);font-family:'DM Mono',monospace;font-size:10px;padding:8px 16px;cursor:pointer;width:100%;text-transform:uppercase;letter-spacing:.08em}
+
+/* ── TOAST ── */
+.toast{position:fixed;bottom:80px;left:50%;transform:translateX(-50%) translateY(20px);background:var(--surface3);border:1px solid var(--accent);border-radius:99px;padding:8px 18px;font-size:11px;color:var(--accent);opacity:0;transition:opacity .3s,transform .3s;pointer-events:none;z-index:999;white-space:nowrap}
+.toast.show{opacity:1;transform:translateX(-50%) translateY(0)}
+
+/* ── CHIP DEMO — aviso visible de que son datos de ejemplo ── */
+.demo-banner{background:rgba(247,183,49,.07);border:1px solid rgba(247,183,49,.2);border-radius:10px;padding:10px 14px;margin:0 16px 12px;display:flex;align-items:center;gap:8px;font-size:9px;color:var(--warn)}
+.demo-banner strong{font-size:10px}
+
+footer{padding:20px 16px;font-size:9px;color:var(--muted);text-align:center;letter-spacing:.05em;border-top:1px solid var(--border)}
+
+/* Animaciones de entrada escalonadas */
+.fade-in{opacity:0;transform:translateY(12px);animation:fadeUp .4s forwards}
+@keyframes fadeUp{to{opacity:1;transform:translateY(0)}}
+.d1{animation-delay:.05s} .d2{animation-delay:.1s} .d3{animation-delay:.15s} .d4{animation-delay:.2s}
+</style>
+</head>
+<body>
+<div class="app">
+
+<!-- ══ HEADER ══ -->
+<header class="header fade-in">
+  <div class="header-top">
+    <div>
+      <!-- Nombre genérico de demo -->
+      <div class="brand">MiCartera<span> · </span>AR</div>
+      <div class="brand-sub">Usuario Demo · Broker Ejemplo · Abr 2026</div>
+    </div>
+    <div style="text-align:right">
+      <div style="font-size:9px;color:var(--muted);text-transform:uppercase;letter-spacing:.1em">Dólar MEP</div>
+      <!-- Precio MEP de ejemplo — en producción viene de la API -->
+      <div style="font-family:'IBM Plex Mono',monospace;font-size:17px;font-weight:600;color:var(--accent2)" id="mep-display">$1.400,00</div>
+      <div class="rp-chip"><span class="rp-dot"></span>RP <span id="rp-display">500</span> pb</div>
+    </div>
+  </div>
+</header>
+
+<!-- Aviso de datos de ejemplo -->
+<div class="demo-banner fade-in">
+  <span>⚠️</span>
+  <div><strong>Datos de ejemplo</strong> — Esta versión usa valores ficticios para demostración. Los datos reales se cargan dinámicamente desde la API.</div>
+</div>
+
+<!-- ══ HERO — Total + Distribución ══ -->
+<div class="hero-block fade-in d1">
+
+  <!-- TOTAL VALORIZADO -->
+  <div class="total-card">
+    <div class="total-top">
+      <div class="total-top-left">
+        <span class="total-label">Total valorizado</span>
+        <!-- Botón privacidad: oculta montos, mantiene porcentajes -->
+        <button class="eye-btn" id="eye-btn" onclick="togglePrivacy()" title="Ocultar montos">👁</button>
+      </div>
+      <!-- Selector de moneda: actualiza todos los valores de la app -->
+      <div class="currency-btns">
+        <button class="curr-btn" onclick="setCurrency('ARS',this)">ARS</button>
+        <button class="curr-btn active" onclick="setCurrency('MEP',this)">MEP</button>
+        <button class="curr-btn" onclick="setCurrency('CCL',this)">CCL</button>
+        <button class="curr-btn" onclick="setCurrency('BNA',this)">BNA</button>
+      </div>
+    </div>
+    <div class="total-amount amount-maskable" id="total-amount">US$ 5.200,00</div>
+    <div class="total-sub" id="total-sub">Cotización Dólar MEP: AR$ 1.400,00</div>
+    <div class="total-rend">
+      <span class="rend-label">Rend. últ. 30 días</span>
+      <span class="rend-val" id="rend-val">▲ +8,50%</span>
+    </div>
+  </div>
+
+  <!-- DISTRIBUCIÓN — donut interactivo -->
+  <div class="dist-card">
+    <div class="dist-top">
+      <span class="dist-label">Distribución</span>
+      <div class="dist-toggle">
+        <button class="dist-btn active" onclick="setDist('instrumento',this)">Instrumento</button>
+        <button class="dist-btn" onclick="setDist('moneda',this)">Moneda</button>
+      </div>
+    </div>
+    <div class="dist-body">
+      <div class="dist-donut-row">
+        <div class="dist-donut-col">
+          <div class="dist-donut" onclick="clearDonutLabel()">
+            <svg id="donut-svg" width="76" height="76" viewBox="0 0 76 76"></svg>
+          </div>
+          <!-- Label que aparece al tocar un segmento del donut -->
+          <div class="donut-label" id="donut-label">
+            <div class="donut-label-dot" id="donut-label-dot"></div>
+            <span class="donut-label-pct" id="donut-label-pct"></span>
+            <span class="donut-label-name" id="donut-label-name"></span>
+          </div>
+        </div>
+        <div class="dist-legend" id="dist-legend"></div>
+      </div>
+    </div>
+  </div>
+
+</div>
+
+<!-- ══ KPIs MINI ══ -->
+<div class="kpis-mini fade-in d2">
+  <div class="kpi">
+    <div class="kpi-label">Liquidez</div>
+    <!-- Porcentaje siempre visible aunque privacidad esté activa -->
+    <div class="kpi-val warn">12,00%</div>
+    <div class="kpi-sub amount-maskable">≈ USD 624 · ARS 873K</div>
+  </div>
+  <div class="kpi">
+    <div class="kpi-label">Posiciones</div>
+    <div class="kpi-val">18</div>
+    <div class="kpi-sub">5 categorías · 15 tickers</div>
+  </div>
+</div>
+
+<!-- ══ TABS ══ -->
+<div class="tabs-bar fade-in d2">
+  <button class="tab-btn active" onclick="switchTab('posiciones',this)">Posiciones</button>
+  <button class="tab-btn" onclick="switchTab('fundamental',this)">Fundamental</button>
+  <button class="tab-btn" onclick="switchTab('catalizadores',this)">Catalizadores</button>
+  <button class="tab-btn" onclick="switchTab('graficos',this)">Gráficos</button>
+</div>
+
+<!-- ══════════════════════════════════════ -->
+<!-- TAB: POSICIONES                        -->
+<!-- ══════════════════════════════════════ -->
+<div id="tab-posiciones" class="tab-content active">
+
+  <!-- Acciones locales de ejemplo -->
+  <div class="sec-title fade-in d3">Acciones AR <span class="sec-count">8 pos · 35,00%</span></div>
+  <div class="ticker-list fade-in d3">
+
+    <!-- Ticker A — posición grande con ganancia, señal tomar parcial -->
+    <div class="ticker-row" onclick="toggleRow(this)" data-rend-usd="+55,00%" data-rend-ars="+85,00%">
+      <div class="tr-header">
+        <div class="tr-bar sell"></div>
+        <div class="tr-left">
+          <div class="tr-ticker">TKRA</div>
+          <div class="tr-name">Empresa Ejemplo A · 20 acc. · 18,00% cartera</div>
+        </div>
+        <div class="tr-mid"><div class="tr-rend pos rend-display">+55,00%</div></div>
+        <div class="tr-right"><span class="tr-badge badge-sell">Tomar parcial</span><span class="tr-chevron">▼</span></div>
+      </div>
+      <div class="tr-detail">
+        <div class="tr-grid">
+          <div><div class="tg-label">Cantidad</div><div class="tg-val">20 acc.</div></div>
+          <div><div class="tg-label">P. Compra USD</div><div class="tg-val amount-maskable">$25,00</div></div>
+          <div><div class="tg-label">P. Compra ARS</div><div class="tg-val amount-maskable">$35.000</div></div>
+          <div><div class="tg-label">P. Actual ARS</div><div class="tg-val amount-maskable">$54.250</div></div>
+          <div><div class="tg-label">Valor ARS</div><div class="tg-val amount-maskable">$1.085.000</div></div>
+          <div><div class="tg-label">Rend. USD</div><div class="tg-val pos rend-usd">+55,00%</div></div>
+        </div>
+        <div class="tr-tesis">Posición dominante. Buena ganancia real USD. Considerar tomar 15–20% en este nivel.</div>
+        <div class="tr-links"><a class="tr-link" href="https://www.tradingview.com/" target="_blank">📊 Ver en TradingView</a></div>
+      </div>
+    </div>
+
+    <!-- Ticker B — posición con pérdida, señal compra táctica -->
+    <div class="ticker-row" onclick="toggleRow(this)" data-rend-usd="-18,00%" data-rend-ars="-5,00%">
+      <div class="tr-header">
+        <div class="tr-bar buy"></div>
+        <div class="tr-left">
+          <div class="tr-ticker">TKRB</div>
+          <div class="tr-name">Empresa Ejemplo B · 500 acc.</div>
+        </div>
+        <div class="tr-mid"><div class="tr-rend neg rend-display">-18,00%</div></div>
+        <div class="tr-right"><span class="tr-badge badge-buy">Compra táctica</span><span class="tr-chevron">▼</span></div>
+      </div>
+      <div class="tr-detail">
+        <div class="tr-grid">
+          <div><div class="tg-label">Cantidad</div><div class="tg-val">500 acc.</div></div>
+          <div><div class="tg-label">P. Compra USD</div><div class="tg-val amount-maskable">$0,40</div></div>
+          <div><div class="tg-label">P. Compra ARS</div><div class="tg-val amount-maskable">$560</div></div>
+          <div><div class="tg-label">P. Actual ARS</div><div class="tg-val amount-maskable">$459</div></div>
+          <div><div class="tg-label">Valor ARS</div><div class="tg-val amount-maskable">$229.500</div></div>
+          <div><div class="tg-label">Rend. USD</div><div class="tg-val neg rend-usd">-18,00%</div></div>
+        </div>
+        <div class="tr-tesis">Apuesta sectorial. Confirmar soporte antes de reforzar.</div>
+        <div class="tr-links"><a class="tr-link" href="https://www.tradingview.com/" target="_blank">📊 Ver en TradingView</a></div>
+      </div>
+    </div>
+
+    <!-- Ticker C — ganancia moderada, mantener -->
+    <div class="ticker-row" onclick="toggleRow(this)" data-rend-usd="+14,00%" data-rend-ars="+33,00%">
+      <div class="tr-header">
+        <div class="tr-bar hold"></div>
+        <div class="tr-left">
+          <div class="tr-ticker">TKRC</div>
+          <div class="tr-name">Empresa Ejemplo C · 40 acc.</div>
+        </div>
+        <div class="tr-mid"><div class="tr-rend pos rend-display">+14,00%</div></div>
+        <div class="tr-right"><span class="tr-badge badge-hold">Mantener</span><span class="tr-chevron">▼</span></div>
+      </div>
+      <div class="tr-detail">
+        <div class="tr-grid">
+          <div><div class="tg-label">Cantidad</div><div class="tg-val">40 acc.</div></div>
+          <div><div class="tg-label">P. Compra USD</div><div class="tg-val amount-maskable">$3,20</div></div>
+          <div><div class="tg-label">P. Compra ARS</div><div class="tg-val amount-maskable">$4.480</div></div>
+          <div><div class="tg-label">P. Actual ARS</div><div class="tg-val amount-maskable">$5.100</div></div>
+          <div><div class="tg-label">Valor ARS</div><div class="tg-val amount-maskable">$204.000</div></div>
+          <div><div class="tg-label">Rend. USD</div><div class="tg-val pos rend-usd">+14,00%</div></div>
+        </div>
+        <div class="tr-tesis">Papel regulado. Catalizador: revisión tarifaria pendiente.</div>
+        <div class="tr-event-chip">📅 Earnings próximo trimestre</div>
+        <div class="tr-links"><a class="tr-link" href="https://www.tradingview.com/" target="_blank">📊 Ver en TradingView</a></div>
+      </div>
+    </div>
+
+    <!-- Ticker D — ganancia fuerte, tomar parcial -->
+    <div class="ticker-row" onclick="toggleRow(this)" data-rend-usd="+38,00%" data-rend-ars="+60,00%">
+      <div class="tr-header">
+        <div class="tr-bar sell"></div>
+        <div class="tr-left">
+          <div class="tr-ticker">TKRD</div>
+          <div class="tr-name">Empresa Ejemplo D · 15 acc.</div>
+        </div>
+        <div class="tr-mid"><div class="tr-rend pos rend-display">+38,00%</div></div>
+        <div class="tr-right"><span class="tr-badge badge-sell">Tomar parcial</span><span class="tr-chevron">▼</span></div>
+      </div>
+      <div class="tr-detail">
+        <div class="tr-grid">
+          <div><div class="tg-label">Cantidad</div><div class="tg-val">15 acc.</div></div>
+          <div><div class="tg-label">P. Compra USD</div><div class="tg-val amount-maskable">$2,50</div></div>
+          <div><div class="tg-label">P. Compra ARS</div><div class="tg-val amount-maskable">$3.500</div></div>
+          <div><div class="tg-label">P. Actual ARS</div><div class="tg-val amount-maskable">$4.830</div></div>
+          <div><div class="tg-label">Valor ARS</div><div class="tg-val amount-maskable">$72.450</div></div>
+          <div><div class="tg-label">Rend. USD</div><div class="tg-val pos rend-usd">+38,00%</div></div>
+        </div>
+        <div class="tr-tesis">Suba fuerte. Recorte parcial recomendado. Catalizadores pendientes.</div>
+        <div class="tr-links"><a class="tr-link" href="https://www.tradingview.com/" target="_blank">📊 Ver en TradingView</a></div>
+      </div>
+    </div>
+
+    <!-- Ticker E — pérdida, value play, compra escalonada -->
+    <div class="ticker-row" onclick="toggleRow(this)" data-rend-usd="-20,00%" data-rend-ars="-7,00%">
+      <div class="tr-header">
+        <div class="tr-bar buy"></div>
+        <div class="tr-left">
+          <div class="tr-ticker">TKRE</div>
+          <div class="tr-name">Empresa Ejemplo E · 80 acc.</div>
+        </div>
+        <div class="tr-mid"><div class="tr-rend neg rend-display">-20,00%</div></div>
+        <div class="tr-right"><span class="tr-badge badge-buy">Compra escalonada</span><span class="tr-chevron">▼</span></div>
+      </div>
+      <div class="tr-detail">
+        <div class="tr-grid">
+          <div><div class="tg-label">Cantidad</div><div class="tg-val">80 acc.</div></div>
+          <div><div class="tg-label">P. Compra USD</div><div class="tg-val amount-maskable">$0,75</div></div>
+          <div><div class="tg-label">P. Compra ARS</div><div class="tg-val amount-maskable">$1.050</div></div>
+          <div><div class="tg-label">P. Actual ARS</div><div class="tg-val amount-maskable">$840</div></div>
+          <div><div class="tg-label">Valor ARS</div><div class="tg-val amount-maskable">$67.200</div></div>
+          <div><div class="tg-label">Rend. USD</div><div class="tg-val neg rend-usd">-20,00%</div></div>
+        </div>
+        <div class="tr-tesis">Value en USD. Candidata a bajar promedio con liquidez disponible.</div>
+        <div class="tr-links"><a class="tr-link" href="https://www.tradingview.com/" target="_blank">📊 Ver en TradingView</a></div>
+      </div>
+    </div>
+
+  </div>
+
+  <!-- CEDEARs de ejemplo -->
+  <div class="sec-title fade-in d4">CEDEARs <span class="sec-count">5 pos · 30,00%</span></div>
+  <div class="ticker-list fade-in d4">
+
+    <!-- CEDEAR 1 — posición grande, alta volatilidad -->
+    <div class="ticker-row" onclick="toggleRow(this)" data-rend-usd="+120,00%" data-rend-ars="+175,00%">
+      <div class="tr-header">
+        <div class="tr-bar warn"></div>
+        <div class="tr-left">
+          <!-- Nota: los CEDEARs tienen subyacente en USD (NYSE/NASDAQ) y cotizan en ARS en BYMA -->
+          <div class="tr-ticker">CEDR1</div>
+          <div class="tr-name">CEDEAR Ejemplo 1 · 60 cert. · 13,00% cartera</div>
+        </div>
+        <div class="tr-mid"><div class="tr-rend pos rend-display">+120,00%</div></div>
+        <div class="tr-right"><span class="tr-badge badge-warn">Tomar/Mantener</span><span class="tr-chevron">▼</span></div>
+      </div>
+      <div class="tr-detail">
+        <div class="tr-grid">
+          <div><div class="tg-label">Cantidad</div><div class="tg-val">60 cert.</div></div>
+          <!-- Precio en ARS (BYMA) -->
+          <div><div class="tg-label">P. Actual ARS</div><div class="tg-val amount-maskable">$13.500</div></div>
+          <div><div class="tg-label">Valor ARS</div><div class="tg-val amount-maskable warn">$810.000</div></div>
+          <!-- Subyacente en USD (NYSE/NASDAQ) -->
+          <div><div class="tg-label">Subyacente USD</div><div class="tg-val">NYSE</div></div>
+          <div><div class="tg-label">% Cartera</div><div class="tg-val warn">13,00%</div></div>
+          <div><div class="tg-label">Rend. USD</div><div class="tg-val pos rend-usd">+120,00%</div></div>
+        </div>
+        <div class="tr-tesis">Posición más rentable. Alta volatilidad. Tomar parcial si se extiende.</div>
+        <div class="tr-links"><a class="tr-link" href="https://www.tradingview.com/" target="_blank">📊 Ver en TradingView</a></div>
+      </div>
+    </div>
+
+    <!-- CEDEAR 2 — tech internacional -->
+    <div class="ticker-row" onclick="toggleRow(this)" data-rend-usd="+40,00%" data-rend-ars="+65,00%">
+      <div class="tr-header">
+        <div class="tr-bar sell"></div>
+        <div class="tr-left">
+          <div class="tr-ticker">CEDR2</div>
+          <div class="tr-name">CEDEAR Ejemplo 2 · 25 cert.</div>
+        </div>
+        <div class="tr-mid"><div class="tr-rend pos rend-display">+40,00%</div></div>
+        <div class="tr-right"><span class="tr-badge badge-sell">Tomar 10–20%</span><span class="tr-chevron">▼</span></div>
+      </div>
+      <div class="tr-detail">
+        <div class="tr-grid">
+          <div><div class="tg-label">Cantidad</div><div class="tg-val">25 cert.</div></div>
+          <div><div class="tg-label">P. Actual ARS</div><div class="tg-val amount-maskable">$11.200</div></div>
+          <div><div class="tg-label">Valor ARS</div><div class="tg-val amount-maskable">$280.000</div></div>
+          <div><div class="tg-label">Subyacente USD</div><div class="tg-val">NASDAQ</div></div>
+          <div><div class="tg-label">% Cartera</div><div class="tg-val">5,38%</div></div>
+          <div><div class="tg-label">Rend. USD</div><div class="tg-val pos rend-usd">+40,00%</div></div>
+        </div>
+        <div class="tr-tesis">Ganancia importante. Tomar 10–20%. Recomprar en corrección post-earnings.</div>
+        <div class="tr-event-chip">📅 Earnings próximo trimestre</div>
+        <div class="tr-links"><a class="tr-link" href="https://www.tradingview.com/" target="_blank">📊 Ver en TradingView</a></div>
+      </div>
+    </div>
+
+    <!-- CEDEAR 3 — ETF core, mantener -->
+    <div class="ticker-row" onclick="toggleRow(this)" data-rend-usd="+25,00%" data-rend-ars="+48,00%">
+      <div class="tr-header">
+        <div class="tr-bar hold"></div>
+        <div class="tr-left">
+          <div class="tr-ticker">CEDR3</div>
+          <div class="tr-name">ETF Ejemplo · 6 cert.</div>
+        </div>
+        <div class="tr-mid"><div class="tr-rend pos rend-display">+25,00%</div></div>
+        <div class="tr-right"><span class="tr-badge badge-hold">Mantener</span><span class="tr-chevron">▼</span></div>
+      </div>
+      <div class="tr-detail">
+        <div class="tr-grid">
+          <div><div class="tg-label">Cantidad</div><div class="tg-val">6 cert.</div></div>
+          <div><div class="tg-label">P. Actual ARS</div><div class="tg-val amount-maskable">$50.000</div></div>
+          <div><div class="tg-label">Valor ARS</div><div class="tg-val amount-maskable">$300.000</div></div>
+          <div><div class="tg-label">Subyacente USD</div><div class="tg-val">NYSE</div></div>
+          <div><div class="tg-label">Rend. USD</div><div class="tg-val pos rend-usd">+25,00%</div></div>
+        </div>
+        <div class="tr-tesis">Core global. Ancla de la cartera internacional. No tocar.</div>
+        <div class="tr-links"><a class="tr-link" href="https://www.tradingview.com/" target="_blank">📊 Ver en TradingView</a></div>
+      </div>
+    </div>
+
+  </div>
+
+  <!-- Stress test con datos genéricos -->
+  <div class="stress-row fade-in">
+    <div class="stress-card danger">
+      <h4>Merval –20%</h4>
+      <div class="stress-drop">–7,0%</div>
+      <div class="stress-desc">Impacto estimado sobre la cartera total. Amortiguado por liquidez y activos internacionales.</div>
+    </div>
+    <div class="stress-card warn">
+      <h4>S&P 500 –15%</h4>
+      <div class="stress-drop">–4,5%</div>
+      <div class="stress-desc">CEDEARs expuestos. ETFs y defensivos amortiguan la caída.</div>
+    </div>
+  </div>
+
+  <!-- Bloque liquidez -->
+  <div class="liq-block fade-in">
+    <div>
+      <div class="liq-num">12,0%</div>
+      <div class="liq-label">liquidez</div>
+    </div>
+    <div class="liq-desc">
+      <strong class="amount-maskable">≈ USD 624</strong> disponibles.<br><br>
+      <strong>Uso sugerido:</strong> Compra escalonada en posiciones con pérdida real USD. Reservar para correcciones post-earnings.
+    </div>
+  </div>
+
+  <!-- Herramientas Claude — para integración con IA -->
+  <div class="sec-title fade-in">Herramientas Claude</div>
+  <div class="action-btns fade-in">
+    <button class="action-btn" onclick="copiarContexto()">
+      <span class="ab-icon">📋</span>
+      <div class="ab-text">
+        <div class="ab-title">Copiar contexto táctico</div>
+        <div class="ab-sub">Texto listo para pegar en Claude.ai</div>
+      </div>
+      <span class="ab-arrow">→</span>
+    </button>
+    <button class="action-btn paste-btn" onclick="togglePaste('paste-tac')">
+      <span class="ab-icon">📥</span>
+      <div class="ab-text">
+        <div class="ab-title">Pegar resultado táctico</div>
+        <div class="ab-sub">Cargá el JSON de respuesta de Claude</div>
+      </div>
+      <span class="ab-arrow">→</span>
+    </button>
+    <div class="paste-area" id="paste-tac">
+      <textarea placeholder="Pegá acá el JSON..."></textarea>
+      <button class="paste-submit" onclick="showToast('✓ Resultado cargado')">Cargar</button>
+    </div>
+  </div>
+
+</div>
+
+<!-- ══════════════════════════════════════ -->
+<!-- TAB: FUNDAMENTAL                       -->
+<!-- ══════════════════════════════════════ -->
+<div id="tab-fundamental" class="tab-content">
+  <div class="sec-title" style="margin-top:8px">Sector A — Ejemplo</div>
+  <div class="fund-grid">
+
+    <!-- Card fundamental con datos de ejemplo -->
+    <div class="fund-card bull">
+      <div class="fc-top">
+        <div>
+          <div class="fc-ticker">TKRA</div>
+          <div class="fc-name">Empresa A · 20 acc. · +55% USD · 18,00% cartera</div>
+        </div>
+        <span class="tr-badge badge-sell">Tomar parcial</span>
+      </div>
+      <!-- Métricas EBITDA de ejemplo -->
+      <div class="fc-ebitda-row">
+        <div class="fc-ebitda-item"><div class="fc-ebitda-label">EBITDA TTM</div><div class="fc-ebitda-val">USD 4,5B</div></div>
+        <div class="fc-ebitda-item"><div class="fc-ebitda-label">EV/EBITDA</div><div class="fc-ebitda-val">4,2x</div></div>
+        <div class="fc-ebitda-item"><div class="fc-ebitda-label">Mg. EBITDA</div><div class="fc-ebitda-val">36%</div></div>
+      </div>
+      <div class="fc-ratios">
+        <div class="fc-ratio"><div class="fc-ratio-label">P/E</div><div class="fc-ratio-val good">7,1x</div></div>
+        <div class="fc-ratio"><div class="fc-ratio-label">Deuda neta</div><div class="fc-ratio-val mid">USD 5,8B</div></div>
+        <div class="fc-ratio"><div class="fc-ratio-label">vs Par regional</div><div class="fc-ratio-val good">–40% desc.</div></div>
+      </div>
+      <div class="fc-tesis">Posición estructural con descuento masivo vs pares. Catalizador regulatorio pendiente.</div>
+      <!-- Escenarios de precio -->
+      <div class="fc-scenarios">
+        <div class="fc-sce"><div class="fc-sce-label">Bear</div><div class="fc-sce-val bear">$25–30</div></div>
+        <div class="fc-sce"><div class="fc-sce-label">Base 2026</div><div class="fc-sce-val base">$45–55</div></div>
+        <div class="fc-sce"><div class="fc-sce-label">Bull</div><div class="fc-sce-val bull">$75–90</div></div>
+      </div>
+    </div>
+
+    <!-- Card value play con pérdida -->
+    <div class="fund-card neutral">
+      <div class="fc-top">
+        <div>
+          <div class="fc-ticker">TKRE</div>
+          <div class="fc-name">Empresa E · 80 acc. · –20% USD</div>
+        </div>
+        <span class="tr-badge badge-buy">Compra escalonada</span>
+      </div>
+      <div class="fc-ebitda-row">
+        <div class="fc-ebitda-item"><div class="fc-ebitda-label">EBITDA</div><div class="fc-ebitda-val">ARS 160B</div></div>
+        <div class="fc-ebitda-item"><div class="fc-ebitda-label">EV/EBITDA</div><div class="fc-ebitda-val good">3,1x</div></div>
+        <div class="fc-ebitda-item"><div class="fc-ebitda-label">Mg. EBITDA</div><div class="fc-ebitda-val">24%</div></div>
+      </div>
+      <div class="fc-ratios">
+        <div class="fc-ratio"><div class="fc-ratio-label">P/B</div><div class="fc-ratio-val good">0,7x</div></div>
+        <div class="fc-ratio"><div class="fc-ratio-label">vs Par</div><div class="fc-ratio-val good">–38% desc.</div></div>
+      </div>
+      <div class="fc-tesis">Value puro en USD. Descuento masivo vs pares. Compra escalonada con liquidez disponible.</div>
+      <div class="fc-scenarios">
+        <div class="fc-sce"><div class="fc-sce-label">Bear</div><div class="fc-sce-val bear">$600</div></div>
+        <div class="fc-sce"><div class="fc-sce-label">Base</div><div class="fc-sce-val base">$950–1.100</div></div>
+        <div class="fc-sce"><div class="fc-sce-label">Bull</div><div class="fc-sce-val bull">$1.400+</div></div>
+      </div>
+    </div>
+
+  </div>
+
+  <div class="sec-title">CEDEARs Internacionales</div>
+  <div class="fund-grid">
+
+    <!-- CEDEAR tech de ejemplo — múltiplos altos -->
+    <div class="fund-card bull">
+      <div class="fc-top">
+        <div>
+          <div class="fc-ticker">CEDR2</div>
+          <div class="fc-name">CEDEAR Tech · 25 cert. · +40% USD</div>
+        </div>
+        <span class="tr-badge badge-sell">Tomar 10–20%</span>
+      </div>
+      <div class="fc-ebitda-row">
+        <div class="fc-ebitda-item"><div class="fc-ebitda-label">EBITDA TTM</div><div class="fc-ebitda-val">USD 120B</div></div>
+        <div class="fc-ebitda-item"><div class="fc-ebitda-label">EV/EBITDA</div><div class="fc-ebitda-val bad">42x</div></div>
+        <div class="fc-ebitda-item"><div class="fc-ebitda-label">Mg. EBITDA</div><div class="fc-ebitda-val good">60%</div></div>
+      </div>
+      <div class="fc-ratios">
+        <div class="fc-ratio"><div class="fc-ratio-label">P/E fwd</div><div class="fc-ratio-val mid">28x</div></div>
+        <div class="fc-ratio"><div class="fc-ratio-label">Target analistas</div><div class="fc-ratio-val">$250 cons.</div></div>
+      </div>
+      <div class="fc-tesis">Infraestructura tecnológica dominante. Múltiplos elevados — tomar parcial.</div>
+      <div class="fc-scenarios">
+        <div class="fc-sce"><div class="fc-sce-label">Bear</div><div class="fc-sce-val bear">$130</div></div>
+        <div class="fc-sce"><div class="fc-sce-label">Base</div><div class="fc-sce-val base">$190–220</div></div>
+        <div class="fc-sce"><div class="fc-sce-label">Bull</div><div class="fc-sce-val bull">$350</div></div>
+      </div>
+    </div>
+
+  </div>
+
+  <div class="sec-title" style="margin-top:20px">Herramientas Claude</div>
+  <div class="action-btns">
+    <button class="action-btn" onclick="copiarPromptFundamental()">
+      <span class="ab-icon">📋</span>
+      <div class="ab-text">
+        <div class="ab-title">Copiar prompt fundamental</div>
+        <div class="ab-sub">Prompt completo para pegar en Claude.ai</div>
+      </div>
+      <span class="ab-arrow">→</span>
+    </button>
+    <button class="action-btn paste-btn" onclick="togglePaste('paste-fund')">
+      <span class="ab-icon">📥</span>
+      <div class="ab-text">
+        <div class="ab-title">Pegar resultado fundamental</div>
+        <div class="ab-sub">Cargá el JSON de Claude</div>
+      </div>
+      <span class="ab-arrow">→</span>
+    </button>
+    <div class="paste-area" id="paste-fund">
+      <textarea placeholder="Pegá acá el JSON..."></textarea>
+      <button class="paste-submit" onclick="showToast('✓ Análisis cargado')">Cargar</button>
+    </div>
+    <button class="action-btn deep-btn" onclick="abrirModal('modal-profundo')">
+      <span class="ab-icon">📖</span>
+      <div class="ab-text">
+        <div class="ab-title">Ver análisis profundo</div>
+        <div class="ab-sub">Análisis completo — todos los tickers</div>
+      </div>
+      <span class="ab-arrow">→</span>
+    </button>
+  </div>
+</div>
+
+<!-- ══════════════════════════════════════ -->
+<!-- TAB: CATALIZADORES                     -->
+<!-- ══════════════════════════════════════ -->
+<div id="tab-catalizadores" class="tab-content">
+  <div class="sec-title" style="margin-top:8px">Próximos eventos</div>
+  <div class="timeline">
+
+    <!-- Evento urgente — próximas semanas -->
+    <div class="tl-item">
+      <div class="tl-dot urgent"></div>
+      <div class="tl-card">
+        <div class="tl-date">Próximas semanas · Urgente</div>
+        <div class="tl-evento">Earnings Q1 — Bloque internacional</div>
+        <div class="tl-tickers">
+          <span class="tl-chip">CEDR1</span>
+          <span class="tl-chip">CEDR2</span>
+          <span class="tl-chip">CEDR3</span>
+        </div>
+        <div class="tl-desc">Múltiples reportes en la misma semana. Volatilidad alta esperada.</div>
+      </div>
+    </div>
+
+    <!-- Evento próximo — semanas siguientes -->
+    <div class="tl-item">
+      <div class="tl-dot near"></div>
+      <div class="tl-card">
+        <div class="tl-date">Próximo mes</div>
+        <div class="tl-evento">Earnings Q1 — Posición local principal</div>
+        <div class="tl-tickers"><span class="tl-chip">TKRC</span></div>
+        <div class="tl-desc">El mercado mira más el catalizador regulatorio que los números trimestrales.</div>
+      </div>
+    </div>
+
+    <!-- Evento estructural — largo plazo -->
+    <div class="tl-item">
+      <div class="tl-dot structural"></div>
+      <div class="tl-card">
+        <div class="tl-date">Q2–Q3 2026 · Estructural</div>
+        <div class="tl-evento">Revisión tarifaria / Regulatoria</div>
+        <div class="tl-tickers">
+          <span class="tl-chip">TKRC</span>
+          <span class="tl-chip">TKRD</span>
+        </div>
+        <div class="tl-desc">Si la revisión supera expectativas puede ser el mayor catalizador del bloque regulado.</div>
+      </div>
+    </div>
+
+    <!-- Evento largo plazo -->
+    <div class="tl-item">
+      <div class="tl-dot far"></div>
+      <div class="tl-card">
+        <div class="tl-date">2027–2028 · Largo plazo</div>
+        <div class="tl-evento">Inicio de producción — Proyecto estratégico</div>
+        <div class="tl-tickers"><span class="tl-chip">CEDR1</span></div>
+        <div class="tl-desc">Principal catalizador de largo plazo. Déficit de materia prima proyectado 2026–2028.</div>
+      </div>
+    </div>
+
+  </div>
+</div>
+
+<!-- ══════════════════════════════════════ -->
+<!-- TAB: GRÁFICOS                          -->
+<!-- ══════════════════════════════════════ -->
+<div id="tab-graficos" class="tab-content">
+  <div class="sec-title" style="margin-top:8px">Seleccioná un ticker</div>
+  <div class="chart-selector" id="chart-selector"></div>
+  <div id="chart-content">
+    <div style="padding:40px 0;text-align:center;font-size:10px;color:var(--muted)">
+      Tocá un ticker para ver su información financiera
+    </div>
+  </div>
+</div>
+
+<footer>Demo v5b · Datos de ejemplo — no reales · No constituye asesoramiento financiero</footer>
+</div>
+
+<!-- ══ MODAL ANÁLISIS PROFUNDO ══ -->
+<div class="modal-overlay" id="modal-profundo">
+  <div class="modal-box">
+    <button class="modal-close" onclick="cerrarModal('modal-profundo')">✕ cerrar</button>
+    <div class="modal-title">Análisis Fundamental — Demo</div>
+    <div class="modal-sub">Datos de ejemplo · Estructura para integración con API real</div>
+
+    <div class="ab-heading">Empresa A (TKRA) — Tesis estructural</div>
+    <div class="ab-content">
+      Posición dominante con descuento masivo vs pares regionales. EBITDA TTM USD 4,5B,
+      EV/EBITDA 4,2x vs par comparable 6,5x. Catalizador regulatorio pendiente.
+      Tesis bull: normalización a 5,5x EV/EBITDA implica precio objetivo ~$75–90.
+    </div>
+
+    <div class="ab-heading">Síntesis CEDEARs</div>
+    <div class="ab-content">
+      <table>
+        <tr><th>Ticker</th><th>EV/EBITDA</th><th>Mg. EBITDA</th><th>Rend. USD</th><th>Acción</th></tr>
+        <tr><td>CEDR1</td><td class="td-warn">N/A</td><td class="td-pos">Alta vol.</td><td class="td-pos">+120%</td><td class="td-warn">Parcial</td></tr>
+        <tr><td>CEDR2</td><td class="td-neg">42x</td><td class="td-pos">60%</td><td class="td-pos">+40%</td><td class="td-warn">Tomar</td></tr>
+        <tr><td>CEDR3</td><td>—</td><td>—</td><td class="td-pos">+25%</td><td>Core · Mantener</td></tr>
+      </table>
+    </div>
+
+    <div class="ab-heading">Conclusión estratégica</div>
+    <div class="ab-content">
+      Cartera bien posicionada. Riesgo principal: concentración en 2 posiciones (31%).
+      Recomendación: consolidar parcialmente las posiciones con mayor ganancia USD,
+      liberar liquidez para correcciones en posiciones value.
+    </div>
+  </div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script>
+// ══════════════════════════════════════════════════
+// DATOS DE EJEMPLO — todos ficticios, seguros para repo público
+// En producción estos valores vienen de la API / Firestore
+// ══════════════════════════════════════════════════
+
+// Valores por moneda: cada botón actualiza todo de forma consistente
+// Referencia principal para rendimiento real: USD MEP
+const CURRENCY_DATA = {
+  ARS: { val:'AR$ 7.280.000', sub:'', rend:'▲ +6,20%', pos:true },
+  MEP: { val:'US$ 5.200,00',  sub:'Cotización Dólar MEP: AR$ 1.400,00', rend:'▲ +8,50%', pos:true },
+  CCL: { val:'US$ 5.010,00',  sub:'Cotización Dólar CCL: AR$ 1.453,00', rend:'▲ +7,80%', pos:true },
+  BNA: { val:'AR$ 7.280.000', sub:'Ref. tipo de cambio BNA', rend:'▲ +6,20%', pos:true }
+};
+
+// Estado global de la app
+let activeCurrency = 'MEP';
+let privacyOn = false;
+
+// Distribución por instrumento — porcentajes de ejemplo
+const DIST_INSTRUMENTO = [
+  { name:'Acciones AR', pct:35.00, color:'#00e5a0' },
+  { name:'CEDEARs',     pct:30.00, color:'#4a9eff' },
+  { name:'Liquidez',    pct:12.00, color:'#f7b731' },
+  { name:'ONs',         pct:10.00, color:'#c084fc' },
+  { name:'FCI',         pct:8.00,  color:'#fb923c' },
+  { name:'Bonos',       pct:5.00,  color:'#f472b6' }
+];
+
+// Distribución por moneda — porcentajes de ejemplo
+const DIST_MONEDA = [
+  { name:'Pesos ARS',    pct:38, color:'#4a9eff' },
+  { name:'Dólares MEP',  pct:30, color:'#00e5a0' },
+  { name:'Dólares CCL',  pct:32, color:'#00c47a' }
+];
+
+// Tickers para el tab de gráficos — genéricos para la demo
+const TICKERS_TV = {
+  TKRA:  { sym:'BCBA-YPFD'  }, // ejemplo: mapear a símbolo real en producción
+  TKRB:  { sym:'BCBA-BHIP'  },
+  TKRC:  { sym:'BCBA-TGNO4' },
+  TKRD:  { sym:'BCBA-TRAN'  },
+  TKRE:  { sym:'BCBA-TXAR'  },
+  CEDR1: { sym:'BCBA-LAR'   },
+  CEDR2: { sym:'BCBA-NVDA'  },
+  CEDR3: { sym:'BCBA-SPY'   }
+};
+
+// ══════════════════════════════════════════════════
+// PRIVACIDAD — oculta montos pero mantiene porcentajes
+// ══════════════════════════════════════════════════
+function togglePrivacy() {
+  privacyOn = !privacyOn;
+  const btn = document.getElementById('eye-btn');
+  btn.textContent = privacyOn ? '🙈' : '👁';
+  btn.title = privacyOn ? 'Mostrar montos' : 'Ocultar montos';
+
+  const MASK = '••••••';
+  document.querySelectorAll('.amount-maskable').forEach(el => {
+    if (privacyOn) {
+      // Guardar valor original antes de ocultar
+      if (!el.dataset.original) el.dataset.original = el.textContent;
+      el.textContent = MASK;
+    } else {
+      // Restaurar valor original
+      if (el.dataset.original) el.textContent = el.dataset.original;
+    }
+  });
+}
+
+// ══════════════════════════════════════════════════
+// SELECTOR DE MONEDA — actualiza toda la app de forma consistente
+// ══════════════════════════════════════════════════
+function setCurrency(mode, btn) {
+  // Actualizar botón activo
+  document.querySelectorAll('.curr-btn').forEach(b => b.classList.remove('active'));
+  btn.classList.add('active');
+  activeCurrency = mode;
+
+  const d = CURRENCY_DATA[mode];
+  const el = document.getElementById('total-amount');
+
+  // Transición suave al cambiar moneda
+  el.style.opacity = '0.3';
+  setTimeout(() => {
+    const newVal = d.val;
+    el.textContent = newVal;
+    // Si privacidad activa, no mostrar el nuevo valor
+    if (privacyOn) { el.dataset.original = newVal; el.textContent = '••••••'; }
+    document.getElementById('total-sub').textContent = d.sub;
+
+    // Actualizar rendimiento con color según positivo/negativo
+    const rv = document.getElementById('rend-val');
+    rv.textContent = d.rend;
+    rv.className = 'rend-val' + (d.pos ? '' : ' neg');
+    el.style.opacity = '1';
+  }, 150);
+
+  // Actualizar rendimientos en todas las filas de tickers
+  updateTickerRends(mode);
+}
+
+// Alterna entre rend. USD y rend. ARS según la moneda seleccionada
+function updateTickerRends(mode) {
+  document.querySelectorAll('.ticker-row').forEach(row => {
+    const usd = row.dataset.rendUsd;
+    const ars = row.dataset.rendArs;
+    const disp  = row.querySelector('.rend-display');
+    const inner = row.querySelector('.rend-usd');
+    const val = (mode === 'ARS') ? ars : usd;
+    if (!val) return;
+    const isPos = !val.startsWith('-');
+    if (disp)  { disp.textContent  = val; disp.className  = 'tr-rend rend-display '  + (isPos ? 'pos' : 'neg'); }
+    if (inner) { inner.textContent = val; inner.className = 'tg-val rend-usd '        + (isPos ? 'pos' : 'neg'); }
+  });
+}
+
+// ══════════════════════════════════════════════════
+// DONUT CHART — distribución interactiva
+// ══════════════════════════════════════════════════
+function renderDonut(data) {
+  const svg    = document.getElementById('donut-svg');
+  const legend = document.getElementById('dist-legend');
+  const cx = 38, cy = 38, r = 26, sw = 10;
+  const circ = 2 * Math.PI * r;
+
+  // Aro base (fondo)
+  svg.innerHTML = `<circle cx="${cx}" cy="${cy}" r="${r}" fill="none" stroke="#1a2030" stroke-width="${sw}"/>`;
+
+  let offset = 0;
+  data.filter(d => d.pct > 0).forEach(d => {
+    const dash = (d.pct / 100) * circ;
+    const gap  = circ - dash;
+    const c = document.createElementNS('http://www.w3.org/2000/svg', 'circle');
+    c.setAttribute('cx', cx); c.setAttribute('cy', cy); c.setAttribute('r', r);
+    c.setAttribute('fill', 'none'); c.setAttribute('stroke', d.color); c.setAttribute('stroke-width', sw);
+    c.setAttribute('stroke-dasharray', `${dash} ${gap}`);
+    c.setAttribute('stroke-dashoffset', -offset);
+    c.setAttribute('transform', `rotate(-90 ${cx} ${cy})`);
+    c.style.cursor = 'pointer';
+    // Al tocar un segmento muestra el label debajo del SVG
+    c.addEventListener('click', e => { e.stopPropagation(); showDonutLabel(d); });
+    svg.appendChild(c);
+    offset += dash + 1;
+  });
+
+  // Leyenda al costado
+  legend.innerHTML = data.map(d => `
+    <div class="dl-item" onclick="showDonutLabel({name:'${d.name}',pct:${d.pct},color:'${d.color}'})">
+      <div class="dl-left">
+        <div class="dl-dot" style="background:${d.color}"></div>
+        <div class="dl-name">${d.name}</div>
+      </div>
+      <div class="dl-pct">${d.pct}%</div>
+    </div>`).join('');
+}
+
+function showDonutLabel(d) {
+  document.getElementById('donut-label-dot').style.background = d.color;
+  document.getElementById('donut-label-pct').textContent  = d.pct + '%';
+  document.getElementById('donut-label-name').textContent = d.name;
+  document.getElementById('donut-label').classList.add('visible');
+}
+function clearDonutLabel() {
+  document.getElementById('donut-label').classList.remove('visible');
+}
+function setDist(mode, btn) {
+  document.querySelectorAll('.dist-btn').forEach(b => b.classList.remove('active'));
+  btn.classList.add('active');
+  renderDonut(mode === 'instrumento' ? DIST_INSTRUMENTO : DIST_MONEDA);
+  clearDonutLabel();
+}
+
+// ══════════════════════════════════════════════════
+// TABS — navegación principal
+// ══════════════════════════════════════════════════
+function switchTab(id, btn) {
+  document.querySelectorAll('.tab-content').forEach(t => t.classList.remove('active'));
+  document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+  document.getElementById('tab-' + id).classList.add('active');
+  btn.classList.add('active');
+  window.scrollTo(0, 0);
+  if (id === 'graficos') initChartSelector();
+}
+
+// ══════════════════════════════════════════════════
+// ACORDEÓN — expand/collapse de filas de ticker
+// ══════════════════════════════════════════════════
+function toggleRow(row) {
+  const open = row.classList.contains('expanded');
+  // Cerrar todos los expandidos antes de abrir el nuevo
+  row.parentElement.querySelectorAll('.ticker-row.expanded').forEach(r => r.classList.remove('expanded'));
+  if (!open) row.classList.add('expanded');
+}
+
+// ══════════════════════════════════════════════════
+// HELPERS DE UI
+// ══════════════════════════════════════════════════
+function togglePaste(id) { document.getElementById(id).classList.toggle('open'); }
+
+function showToast(msg) {
+  const t = document.getElementById('toast');
+  t.textContent = msg;
+  t.classList.add('show');
+  setTimeout(() => t.classList.remove('show'), 2500);
+}
+
+function abrirModal(id)  { document.getElementById(id).classList.add('open');    document.body.style.overflow = 'hidden'; }
+function cerrarModal(id) { document.getElementById(id).classList.remove('open'); document.body.style.overflow = ''; }
+
+// Cerrar modal tocando el overlay
+document.querySelectorAll('.modal-overlay').forEach(m =>
+  m.addEventListener('click', function(e) { if (e.target === this) cerrarModal(this.id); })
+);
+
+// ══════════════════════════════════════════════════
+// TAB GRÁFICOS — widgets TradingView embebidos
+// ══════════════════════════════════════════════════
+let chartInited = false;
+
+function initChartSelector() {
+  if (chartInited) return;
+  chartInited = true;
+  const sel = document.getElementById('chart-selector');
+  Object.keys(TICKERS_TV).forEach(t => {
+    const btn = document.createElement('button');
+    btn.className = 'chart-ticker-btn';
+    btn.textContent = t;
+    btn.onclick = () => loadChart(t, btn);
+    sel.appendChild(btn);
+  });
+}
+
+function loadChart(ticker, btn) {
+  document.querySelectorAll('.chart-ticker-btn').forEach(b => b.classList.remove('active'));
+  btn.classList.add('active');
+
+  const sym = TICKERS_TV[ticker].sym;
+  const baseUrl = `https://www.tradingview.com/symbols/${sym}/`;
+  const content = document.getElementById('chart-content');
+  const isMobile = window.innerWidth < 700 || /Android|iPhone|iPad/i.test(navigator.userAgent);
+
+  if (isMobile) {
+    // En mobile: links directos a TradingView (los widgets no funcionan en mobile)
+    content.innerHTML = `
+      <div class="chart-section">
+        <div class="chart-section-title">Gráfico de precio · ${ticker}</div>
+        <div class="tv-widget-wrap">
+          <div class="tv-fallback">
+            <div class="tv-fallback-title">${ticker}</div>
+            <div class="tv-fallback-sub">Los widgets embebidos requieren Chrome desktop. Desde mobile podés abrir directamente.</div>
+            <a class="tv-open-btn" href="${baseUrl}" target="_blank">📈 Ver gráfico en TradingView</a>
+            <a class="tv-open-btn fin" href="${baseUrl}financials-income-statement/" target="_blank">📊 Informes financieros</a>
+            <a class="tv-open-btn fin" href="${baseUrl}financials-statistics/" target="_blank">📉 Estadísticas</a>
+            <div class="tv-note">Abre TradingView con la vista de información financiera</div>
+          </div>
+        </div>
+      </div>`;
+  } else {
+    // En desktop: widget embebido con fallback a links
+    content.innerHTML = `
+      <div class="chart-section">
+        <div class="chart-section-title">Gráfico de precio · ${ticker}</div>
+        <div class="tv-widget-wrap" style="min-height:400px" id="wrap-price">
+          <div style="padding:16px;text-align:center;font-size:10px;color:var(--muted)">Cargando…</div>
+        </div>
+        <a class="tv-open-btn" href="${baseUrl}" target="_blank" style="margin-top:8px">↗ Ver completo en TradingView</a>
+      </div>
+      <div class="chart-section">
+        <div class="chart-section-title">Información financiera · ${ticker}</div>
+        <div class="tv-widget-wrap" style="min-height:450px" id="wrap-fin">
+          <div style="padding:16px;text-align:center;font-size:10px;color:var(--muted)">Cargando…</div>
+        </div>
+        <div style="display:flex;gap:8px;margin-top:8px;flex-wrap:wrap">
+          <a class="tv-open-btn fin" href="${baseUrl}financials-income-statement/" target="_blank" style="flex:1">📊 Informes</a>
+          <a class="tv-open-btn fin" href="${baseUrl}financials-statistics/" target="_blank" style="flex:1">📉 Estadísticas</a>
+          <a class="tv-open-btn fin" href="${baseUrl}financials-dividends/" target="_blank" style="flex:1">💰 Dividendos</a>
+        </div>
+      </div>`;
+
+    // Widget de precio (con delay para asegurar que el DOM esté listo)
+    setTimeout(() => {
+      const wrap = document.getElementById('wrap-price');
+      if (!wrap) return;
+      const container = document.createElement('div');
+      container.className = 'tradingview-widget-container';
+      container.style.height = '400px';
+      const s = document.createElement('script');
+      s.src = 'https://s3.tradingview.com/external-embedding/embed-widget-advanced-chart.js';
+      s.async = true;
+      s.textContent = JSON.stringify({
+        symbol: sym.replace('-', ':'), interval: 'D',
+        timezone: 'America/Argentina/Buenos_Aires',
+        theme: 'dark', style: '1', locale: 'es',
+        backgroundColor: '#0e1117', gridColor: 'rgba(28,37,53,0.8)',
+        width: '100%', height: '400', hide_top_toolbar: false,
+        allow_symbol_change: false, save_image: false
+      });
+      container.appendChild(s);
+      wrap.innerHTML = '';
+      wrap.appendChild(container);
+    }, 100);
+
+    // Widget financials
+    setTimeout(() => {
+      const wrap2 = document.getElementById('wrap-fin');
+      if (!wrap2) return;
+      const container2 = document.createElement('div');
+      container2.className = 'tradingview-widget-container';
+      container2.style.height = '450px';
+      const s2 = document.createElement('script');
+      s2.src = 'https://s3.tradingview.com/external-embedding/embed-widget-financials.js';
+      s2.async = true;
+      s2.textContent = JSON.stringify({
+        symbol: sym.replace('-', ':'), colorTheme: 'dark',
+        isTransparent: true, locale: 'es',
+        largeChartUrl: '', width: '100%', height: '450'
+      });
+      container2.appendChild(s2);
+      wrap2.innerHTML = '';
+      wrap2.appendChild(container2);
+    }, 300);
+  }
+}
+
+// ══════════════════════════════════════════════════
+// COPIAR CONTEXTO — genera texto para pegar en Claude.ai
+// En producción esto se arma dinámicamente desde los datos de la API
+// ══════════════════════════════════════════════════
+function copiarContexto() {
+  const txt = `CARTERA Demo · Broker Ejemplo · Abr 2026 · MEP $1.400,00 · RP ~500pb · Total USD ~5.200
+Composición: Acc.AR 35% · CEDEARs 30% · Liquidez 12% · ONs 10% · FCI 8% · Bonos 5%
+ACCIONES: TKRA 20·+55% | TKRB 500·-18% | TKRC 40·+14% | TKRD 15·+38% | TKRE 80·-20%
+CEDEARS: CEDR1 60·+120%·13% | CEDR2 25·+40% | CEDR3 6·+25%
+Criterios: No vender pérdida real USD · Tomar parciales con ganancia USD extendida`;
+  navigator.clipboard.writeText(txt)
+    .then(() => showToast('✓ Copiado — pegá en Claude.ai'))
+    .catch(() => showToast('⚠ Error al copiar'));
+}
+
+function copiarPromptFundamental() {
+  const txt = `Análisis fundamental MiCartera V1 Abr 2026 (MEP $1.400 · USD ~5.200).
+FUNDAMENTAL: TKRA, TKRC, TKRD, TKRE, CEDR1, CEDR2, CEDR3
+Para cada ticker: EBITDA · EV/EBITDA · Mg.EBITDA · deuda neta · FCF · comparables · escenarios 2026-2030.
+Criterios: Métrica base USD MEP · No vender pérdida real USD.
+Devolver JSON estructurado por ticker.`;
+  navigator.clipboard.writeText(txt)
+    .then(() => showToast('✓ Prompt copiado — pegá en Claude.ai'))
+    .catch(() => showToast('⚠ Error al copiar'));
+}
+
+// ══════════════════════════════════════════════════
+// INIT — renderizar donut al cargar
+// ══════════════════════════════════════════════════
+renderDonut(DIST_INSTRUMENTO);
+</script>
+</body>
+</html>

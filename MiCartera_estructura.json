@@ -1,0 +1,243 @@
+{
+  "_comentario": "Estructura de referencia del proyecto MiCartera. TODOS los valores son ficticios o vacíos. Nunca incluir datos reales en este archivo. Los datos reales se cargan dinámicamente desde la API / Firestore.",
+  "_version": "1.0",
+  "_uso": "Template para desarrollo y pruebas. Safe para repositorio público.",
+
+  "proyecto": {
+    "nombre": "MiCartera",
+    "descripcion": "App de seguimiento de cartera de inversiones. Multi-usuario. Cada usuario conecta su propio broker.",
+    "ultima_actualizacion": "YYYY-MM-DD"
+  },
+
+  "resumen_cartera": {
+    "_comentario": "Totales calculados en el backend a partir de las posiciones. No hardcodear.",
+    "valor_total_ars": 0,
+    "mep_broker": 0,
+    "ccl_broker": 0,
+    "bna_referencia": 0,
+    "valor_total_usd_mep": 0,
+    "valor_total_usd_ccl": 0,
+    "composicion_pct": {
+      "acciones_ar": 0,
+      "cedears": 0,
+      "liquidez": 0,
+      "ons": 0,
+      "fci": 0,
+      "bonos": 0
+    },
+    "rend_30d_usd_mep_pct": 0,
+    "rend_30d_ars_pct": 0
+  },
+
+  "liquidez": {
+    "_comentario": "Efectivo disponible en ARS y divisas. El campo usd_total_aprox se calcula dividiendo por mep_broker.",
+    "subtotal_ars": 0,
+    "pct_cartera": 0,
+    "usd_total_aprox": 0,
+    "detalle": [
+      {
+        "_comentario": "Cada item representa una especie de efectivo o divisa en el broker",
+        "especie": "",
+        "cantidad": 0,
+        "precio_ars": 0,
+        "valor_ars": 0
+      }
+    ]
+  },
+
+  "acciones_ar": {
+    "_comentario": "Posiciones en acciones que cotizan en BYMA (mercado local argentino). Precios en ARS.",
+    "subtotal_ars": 0,
+    "pct_cartera": 0,
+    "posiciones": [
+      {
+        "ticker": "",
+        "descripcion": "",
+        "cantidad": 0,
+        "precio_actual_ars": 0,
+        "valor_corriente_ars": 0,
+        "pct_cartera": 0,
+        "precio_compra_usd": 0,
+        "precio_compra_ars": 0,
+        "rend_usd_pct": 0,
+        "rend_ars_pct": 0,
+        "accion_tactica": "",
+        "_accion_tactica_valores_posibles": [
+          "mantener",
+          "tomar_parcial",
+          "compra_tactica",
+          "compra_escalonada",
+          "compra_en_correccion",
+          "mantener_tomar_parcial",
+          "vender"
+        ],
+        "tesis_corta": "",
+        "evento_proximo": null,
+        "earnings_fecha": null
+      }
+    ]
+  },
+
+  "cedears": {
+    "_comentario": "CEDEARs: cotizan en ARS en BYMA pero tienen subyacente internacional en NYSE/NASDAQ. SIEMPRE distinguir precio ARS (BYMA) del valor subyacente en USD (mercado internacional).",
+    "subtotal_ars": 0,
+    "pct_cartera": 0,
+    "posiciones": [
+      {
+        "ticker": "",
+        "descripcion": "",
+        "subyacente_usd": "",
+        "_subyacente_usd_comentario": "Símbolo del subyacente en el mercado internacional (ej: NVDA, SPY, BBD)",
+        "mercado_subyacente": "",
+        "_mercado_subyacente_valores_posibles": ["NYSE", "NASDAQ", "AMEX"],
+        "ratio_cedear": 1,
+        "_ratio_cedear_comentario": "Cuántos CEDEARs equivalen a 1 acción del subyacente",
+        "cantidad": 0,
+        "precio_actual_ars": 0,
+        "_precio_actual_ars_comentario": "Precio del CEDEAR en ARS, cotización BYMA",
+        "precio_subyacente_usd": 0,
+        "_precio_subyacente_usd_comentario": "Precio del subyacente en USD en NYSE/NASDAQ",
+        "valor_corriente_ars": 0,
+        "pct_cartera": 0,
+        "precio_compra_usd": 0,
+        "rend_usd_pct": 0,
+        "rend_ars_pct": 0,
+        "accion_tactica": "",
+        "tesis_corta": "",
+        "evento_proximo": null,
+        "earnings_fecha": null
+      }
+    ]
+  },
+
+  "bonos": {
+    "_comentario": "Bonos soberanos y corporativos. Precio expresado en centavos de USD (paridad).",
+    "subtotal_ars": 0,
+    "pct_cartera": 0,
+    "posiciones": [
+      {
+        "ticker": "",
+        "descripcion": "",
+        "tipo": "",
+        "_tipo_valores_posibles": ["soberano_usd", "soberano_ars", "corporativo_usd", "corporativo_ars"],
+        "cantidad": 0,
+        "precio_actual": 0,
+        "_precio_actual_comentario": "En paridad (centavos de USD para bonos USD, o precio en ARS para bonos en pesos)",
+        "valor_corriente_ars": 0,
+        "pct_cartera": 0,
+        "rend_usd_pct": 0,
+        "tir_pct": 0,
+        "vencimiento": ""
+      }
+    ]
+  },
+
+  "ons": {
+    "_comentario": "Obligaciones Negociables (corporativas). Similar a bonos pero emisores privados.",
+    "subtotal_ars": 0,
+    "pct_cartera": 0,
+    "posiciones": [
+      {
+        "ticker": "",
+        "descripcion": "",
+        "emisor": "",
+        "tasa_pct": 0,
+        "vencimiento": "",
+        "cantidad": 0,
+        "precio_actual": 0,
+        "valor_corriente_ars": 0,
+        "pct_cartera": 0,
+        "rend_usd_pct": 0,
+        "tir_pct": 0
+      }
+    ]
+  },
+
+  "fci": {
+    "_comentario": "Fondos Comunes de Inversión. El valor se calcula por cuotaparte.",
+    "subtotal_ars": 0,
+    "pct_cartera": 0,
+    "posiciones": [
+      {
+        "ticker": "",
+        "descripcion": "",
+        "tipo_fci": "",
+        "_tipo_fci_valores_posibles": ["money_market", "renta_fija_usd", "renta_fija_ars", "renta_variable", "mixto"],
+        "cantidad": 0,
+        "precio_cuotaparte": 0,
+        "valor_corriente_ars": 0,
+        "pct_cartera": 0,
+        "rend_usd_pct": 0
+      }
+    ]
+  },
+
+  "perfil_inversor": {
+    "_comentario": "Configuración de preferencias del usuario. Se persiste en Firestore por usuario.",
+    "pais": "",
+    "moneda_referencia": "USD_MEP",
+    "_moneda_referencia_comentario": "Moneda base para calcular rendimiento real. Opciones: USD_MEP, USD_CCL, USD_BNA, ARS",
+    "horizonte": "",
+    "_horizonte_valores_posibles": ["corto_plazo", "mediano_plazo", "largo_plazo", "mixto"],
+    "criterios_decision": [],
+    "_criterios_decision_comentario": "Lista de strings con los criterios de decisión del inversor",
+    "preferencias_ui": {
+      "mostrar_rendimiento_en": "USD_MEP",
+      "privacidad_por_defecto": false,
+      "notificaciones_earnings": true,
+      "alerta_pct_cartera_max": 20
+    }
+  },
+
+  "catalizadores": {
+    "_comentario": "Eventos futuros que pueden impactar la cartera. Se muestran en el tab Catalizadores.",
+    "proximos": [
+      {
+        "fecha": "YYYY-MM-DD",
+        "tipo": "",
+        "_tipo_valores_posibles": ["earnings", "rti_tarifario", "vencimiento_bono", "dividendo", "evento_macro", "otro"],
+        "evento": "",
+        "descripcion": "",
+        "tickers_afectados": [],
+        "urgencia": "",
+        "_urgencia_valores_posibles": ["urgente", "cercano", "estructural", "lejano"],
+        "impacto_esperado": ""
+      }
+    ]
+  },
+
+  "cotizaciones": {
+    "_comentario": "Cotizaciones de referencia. En producción se actualizan por polling cada 30-60 segundos desde la API del broker o fuentes externas.",
+    "dolar_mep": 0,
+    "dolar_ccl": 0,
+    "dolar_bna": 0,
+    "dolar_oficial": 0,
+    "riesgo_pais_pb": 0,
+    "ultima_actualizacion": "YYYY-MM-DDTHH:MM:SSZ"
+  },
+
+  "stress_test": {
+    "_comentario": "Resultados de stress test calculados en el backend. Se recalculan cuando cambia la cartera.",
+    "escenarios": [
+      {
+        "nombre": "",
+        "descripcion": "",
+        "supuesto": "",
+        "impacto_cartera_pct": 0,
+        "tickers_mas_afectados": [],
+        "amortiguadores": []
+      }
+    ]
+  },
+
+  "metadata_api": {
+    "_comentario": "Metadata para la integración con el backend. No contiene datos sensibles.",
+    "version_estructura": "1.0",
+    "broker": "",
+    "_broker_comentario": "Identificador del broker (no datos de acceso). Ej: PPI, IOL, Balanz, etc.",
+    "ultima_sincronizacion": "YYYY-MM-DDTHH:MM:SSZ",
+    "proxima_sincronizacion": "YYYY-MM-DDTHH:MM:SSZ",
+    "intervalo_polling_segundos": 60,
+    "fuentes_cotizacion": []
+  }
+}
