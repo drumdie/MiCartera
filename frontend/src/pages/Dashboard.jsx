@@ -82,7 +82,7 @@ export default function Dashboard() {
   ]
 
   // ── Total valorizado según moneda activa ──────────────────────────────────
-  const totalARS  = resumen.valor_total_ars
+  const totalARS  = resumen?.valor_total_ars ?? 0
   const totalDisp = (() => {
     switch (activeCurrency) {
       case 'ARS': return formatARS(totalARS)
@@ -101,20 +101,20 @@ export default function Dashboard() {
     }
   })()
   const rendPct = (activeCurrency === 'ARS' || activeCurrency === 'BNA')
-    ? resumen.rend_30d_ars_pct
-    : resumen.rend_30d_usd_mep_pct
+    ? (resumen?.rend_30d_ars_pct     ?? 0)
+    : (resumen?.rend_30d_usd_mep_pct ?? 0)
   const rendPos = rendPct >= 0
 
   // ── KPIs ──────────────────────────────────────────────────────────────────
-  const liqPct = portfolio.liquidez.pct_cartera
-  const liqUSD = portfolio.liquidez.usd_total_aprox
-  const liqARS = portfolio.liquidez.subtotal_ars
+  const liqPct = portfolio?.liquidez?.pct_cartera    ?? 0
+  const liqUSD = portfolio?.liquidez?.usd_total_aprox ?? 0
+  const liqARS = portfolio?.liquidez?.subtotal_ars    ?? 0
   const totalTickers =
-    portfolio.acciones_ar.posiciones.length +
-    portfolio.cedears.posiciones.length +
-    portfolio.bonos.posiciones.length +
-    portfolio.ons.posiciones.length +
-    portfolio.fci.posiciones.length
+    (portfolio?.acciones_ar?.posiciones?.length ?? 0) +
+    (portfolio?.cedears?.posiciones?.length     ?? 0) +
+    (portfolio?.bonos?.posiciones?.length       ?? 0) +
+    (portfolio?.ons?.posiciones?.length         ?? 0) +
+    (portfolio?.fci?.posiciones?.length         ?? 0)
 
   return (
     <div className="app">

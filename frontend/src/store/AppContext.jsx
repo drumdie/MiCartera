@@ -20,12 +20,29 @@ const MOCK_PORTFOLIO = {
   liquidez:    MOCK_LIQUIDEZ,
 }
 
+// Estructura vacía para usuario logueado sin portfolio cargado aún
+const EMPTY_PORTFOLIO = {
+  acciones_ar: { subtotal_ars: 0, pct_cartera: 0, posiciones: [] },
+  cedears:     { subtotal_ars: 0, pct_cartera: 0, posiciones: [] },
+  bonos:       { subtotal_ars: 0, pct_cartera: 0, posiciones: [] },
+  ons:         { subtotal_ars: 0, pct_cartera: 0, posiciones: [] },
+  fci:         { subtotal_ars: 0, pct_cartera: 0, posiciones: [] },
+  liquidez:    { subtotal_ars: 0, pct_cartera: 0, usd_total_aprox: 0, detalle: [] },
+  _valor_total_ars: 0,
+}
+
+const EMPTY_RESUMEN = {
+  valor_total_ars: 0,
+  composicion_pct: { acciones_ar: 0, cedears: 0, bonos: 0, ons: 0, fci: 0, liquidez: 0 },
+  rend_30d_usd_mep_pct: 0,
+  rend_30d_ars_pct: 0,
+}
+
 export function AppProvider({ children }) {
   const [activeCurrency, setActiveCurrency] = useState('MEP')
   const [privacyOn,      setPrivacyOn]      = useState(false)
   const [distMode,       setDistMode]       = useState('instrumento')
 
-  // Sincronización con PPI
   const [syncing,   setSyncing]   = useState(false)
   const [syncError, setSyncError] = useState(null)
   const [lastSync,  setLastSync]  = useState(null)
@@ -33,24 +50,26 @@ export function AppProvider({ children }) {
   const { user, loading: authLoading, signIn, signOut } = useAuth()
 
   const {
-    portfolio:    fsPortfolio,
-    cotizaciones: fsCotizaciones,
-    resumen:      fsResumen,
+    portfolio:     fsPortfolio,
+    cotizaciones:  fsCotizaciones,
+    resumen:       fsResumen,
     catalizadores: fsCatalizadores,
-    stressTest:   fsStressTest,
+    stressTest:    fsStressTest,
     refreshStress,
-    fundamental:  fsFundamental,
-    loading:      portfolioLoading,
+    fundamental:   fsFundamental,
   } = usePortfolio(user?.uid)
 
-  const isDemo = !user || (portfolioLoading && !fsPortfolio)
+  // isDemo: solo cuando no hay sesión activa
+  const isDemo = !user
 
-  const portfolio    = isDemo ? MOCK_PORTFOLIO    : fsPortfolio
-  const cotizaciones = isDemo ? MOCK_COTIZACIONES : fsCotizaciones
-  const resumen      = isDemo ? MOCK_RESUMEN      : fsResumen
-  const catalizadores= isDemo ? MOCK_CATALIZADORES: fsCatalizadores
+  // Cuando el usuario está logueado, los datos de Firestore pueden tardar un ciclo
+  // en llegar. Usamos estructuras vacías como fallback en lugar de null.
+  const portfolio    = isDemo ? MOCK_PORTFOLIO    : (fsPortfolio    ?? EMPTY_PORTFOLIO)
+  const cotizaciones = isDemo ? MOCK_COTIZACIONES : (fsCotizaciones ?? MOCK_COTIZACIONES)
+  const resumen      = isDemo ? MOCK_RESUMEN      : (fsResumen      ?? EMPTY_RESUMEN)
+  const catalizadores = isDemo ? MOCK_CATALIZADORES : (fsCatalizadores ?? [])
   const stressTest   = isDemo ? MOCK_STRESS_TEST  : fsStressTest
-  const fundamental  = isDemo ? MOCK_FUNDAMENTAL  : fsFundamental
+  const fundamental  = isDemo ? MOCK_FUNDAMENTAL  : (fsFundamental  ?? [])
 
   const syncPPI = useCallback(async () => {
     if (!user) return
@@ -59,7 +78,6 @@ export function AppProvider({ children }) {
     try {
       const result = await apiPost('/api/portfolio/sync')
       setLastSync(result.timestamp ?? new Date().toISOString())
-      // Re-calculamos stress test con la cartera recién sincronizada
       await refreshStress()
     } catch (err) {
       setSyncError(err.message || 'Error al sincronizar con PPI')
