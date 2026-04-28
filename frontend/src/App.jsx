@@ -3,10 +3,8 @@ import { AppProvider, useApp } from './store/AppContext'
 import Dashboard from './pages/Dashboard'
 import Login     from './pages/Login'
 
-function AuthGate() {
-  const { user, authLoading } = useApp()
-
-  if (authLoading) return (
+function Spinner() {
+  return (
     <div style={{
       background: 'var(--bg)', minHeight: '100vh',
       display: 'flex', alignItems: 'center', justifyContent: 'center',
@@ -16,8 +14,14 @@ function AuthGate() {
       </div>
     </div>
   )
+}
 
-  return user ? <Dashboard /> : <Login />
+function AuthGate() {
+  const { user, authLoading } = useApp()
+
+  if (authLoading) return <Spinner />
+  if (!user)       return <Login />
+  return <Dashboard />
 }
 
 export default function App() {
