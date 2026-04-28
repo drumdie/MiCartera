@@ -1,0 +1,22 @@
+@import url('https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=DM+Mono:ital,wght@0,300;0,400;0,500&family=Syne:wght@600;700;800&display=swap');
+
+:root {
+  --bg: #080a0d;
+  --surface: #0e1117;
+  --surface2: #141920;
+  --surface3: #1a2030;
+  --border: #1c2535;
+  --border2: #243040;
+  --accent: #00e5a0;
+  --accent2: #f7b731;
+  --accent3: #4a9eff;
+  --red: #ff4d6d;
+  --purple: #c084fc;
+  --text: #dde4ed;
+  --muted: #4a5a6e;
+  --muted2: #6a7e94;
+  --buy: #00e5a0;
+  --hold: #4a9eff;
+  --sell: #ff4d6d;
+  --warn: #f7b731;
+}
