@@ -1,16 +1,17 @@
-import { useState, useEffect, useMemo } from 'react'
+import { useState, useEffect, useMemo, useCallback } from 'react'
 import { MOCK_COTIZACIONES, MOCK_STRESS_TEST, MOCK_FUNDAMENTAL } from '../data/mockPortfolio'
 import {
   onSnapshotPortfolio,
   onSnapshotCotizaciones,
   onSnapshotCatalysts,
 } from '../services/portfolioService'
+import { apiGet } from '../services/apiClient'
 
 const EMPTY_CAT  = { subtotal_ars: 0, pct_cartera: 0, posiciones: [] }
 const EMPTY_LIQ  = { subtotal_ars: 0, pct_cartera: 0, usd_total_aprox: 0, detalle: [] }
 
 function buildCategory(raw) {
-  const posiciones  = raw?.posiciones ?? []
+  const posiciones   = raw?.posiciones ?? []
   const subtotal_ars = posiciones.reduce((s, p) => s + (p.valor_corriente_ars ?? 0), 0)
   return { ...EMPTY_CAT, ...raw, posiciones, subtotal_ars }
 }
@@ -29,8 +30,8 @@ function computePortfolio(raw, cotizaciones) {
   const liquidez = {
     ...EMPTY_LIQ,
     ...raw.liquidez,
-    detalle:       liqDetalle,
-    subtotal_ars:  liqSubtotal,
+    detalle:         liqDetalle,
+    subtotal_ars:    liqSubtotal,
     usd_total_aprox: cotizaciones.dolar_mep > 0
       ? Math.round(liqSubtotal / cotizaciones.dolar_mep)
       : 0,
@@ -65,18 +66,26 @@ function computeResumen(portfolio) {
       fci:         portfolio.fci.pct_cartera,
       liquidez:    portfolio.liquidez.pct_cartera,
     },
-    // rend_30d_* calculado por el backend en Fase 2
     rend_30d_usd_mep_pct: 0,
     rend_30d_ars_pct:     0,
   }
+}
+
+// Derivar tipo visual desde impacto porcentual (para StressCard CSS class)
+function withTipo(escenario) {
+  const pct = escenario.impacto_cartera_pct ?? 0
+  const tipo = pct < -10 ? 'danger' : pct < 0 ? 'warn' : ''
+  return { ...escenario, tipo }
 }
 
 export function usePortfolio(uid) {
   const [rawPortfolio,  setRawPortfolio]  = useState(null)
   const [cotizaciones,  setCotizaciones]  = useState(MOCK_COTIZACIONES)
   const [catalizadores, setCatalizadores] = useState([])
+  const [stressTest,    setStressTest]    = useState(MOCK_STRESS_TEST)
   const [loading,       setLoading]       = useState(true)
 
+  // Suscripciones Firestore
   useEffect(() => {
     if (!uid) { setLoading(false); return }
     return onSnapshotPortfolio(uid, (data) => {
@@ -96,6 +105,22 @@ export function usePortfolio(uid) {
     return onSnapshotCatalysts(uid, setCatalizadores)
   }, [uid])
 
+  // Stress test desde el backend — se puede refrescar manualmente con refreshStress()
+  const fetchStress = useCallback(async () => {
+    if (!uid) return
+    try {
+      const data = await apiGet('/api/stress')
+      const escenarios = (data.escenarios ?? []).map(withTipo)
+      if (escenarios.length > 0) setStressTest(escenarios)
+    } catch {
+      // Backend no disponible o cartera vacía → mantener mock/estado anterior
+    }
+  }, [uid])
+
+  useEffect(() => {
+    fetchStress()
+  }, [fetchStress])
+
   const portfolio = useMemo(
     () => computePortfolio(rawPortfolio, cotizaciones),
     [rawPortfolio, cotizaciones]
@@ -107,7 +132,8 @@ export function usePortfolio(uid) {
     cotizaciones,
     resumen,
     catalizadores,
-    stressTest:  MOCK_STRESS_TEST,
+    stressTest,
+    refreshStress: fetchStress,
     fundamental: MOCK_FUNDAMENTAL,
     loading,
   }

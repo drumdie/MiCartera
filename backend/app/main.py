@@ -2,6 +2,11 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.core.config import settings
+from app.core.firebase_admin_init import init_firebase
+from app.middleware.auth import FirebaseAuthMiddleware
+from app.routers import portfolio, prices, stress
+
+init_firebase()
 
 app = FastAPI(
     title="MiCartera API",
@@ -18,14 +23,14 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+app.add_middleware(FirebaseAuthMiddleware)
+
 
 @app.get("/api/health")
 def health():
     return {"status": "ok", "version": "0.1.0"}
 
 
-# Los routers de portfolio, prices y stress se registran en Fase 2:
-# from app.routers import portfolio, prices, stress
-# app.include_router(portfolio.router, prefix="/api")
-# app.include_router(prices.router,    prefix="/api")
-# app.include_router(stress.router,    prefix="/api")
+app.include_router(portfolio.router)
+app.include_router(prices.router)
+app.include_router(stress.router)

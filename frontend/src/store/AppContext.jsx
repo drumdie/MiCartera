@@ -1,4 +1,4 @@
-import { createContext, useContext, useState } from 'react'
+import { createContext, useContext, useState, useCallback } from 'react'
 import {
   MOCK_COTIZACIONES, MOCK_RESUMEN,
   MOCK_ACCIONES_AR, MOCK_CEDEARS, MOCK_BONOS,
@@ -7,6 +7,7 @@ import {
 } from '../data/mockPortfolio'
 import { useAuth }      from '../hooks/useAuth'
 import { usePortfolio } from '../hooks/usePortfolio'
+import { apiPost }      from '../services/apiClient'
 
 export const AppContext = createContext(null)
 
@@ -24,6 +25,11 @@ export function AppProvider({ children }) {
   const [privacyOn,      setPrivacyOn]      = useState(false)
   const [distMode,       setDistMode]       = useState('instrumento')
 
+  // Sincronización con PPI
+  const [syncing,   setSyncing]   = useState(false)
+  const [syncError, setSyncError] = useState(null)
+  const [lastSync,  setLastSync]  = useState(null)
+
   const { user, loading: authLoading, signIn, signOut } = useAuth()
 
   const {
@@ -32,6 +38,7 @@ export function AppProvider({ children }) {
     resumen:      fsResumen,
     catalizadores: fsCatalizadores,
     stressTest:   fsStressTest,
+    refreshStress,
     fundamental:  fsFundamental,
     loading:      portfolioLoading,
   } = usePortfolio(user?.uid)
@@ -45,6 +52,22 @@ export function AppProvider({ children }) {
   const stressTest   = isDemo ? MOCK_STRESS_TEST  : fsStressTest
   const fundamental  = isDemo ? MOCK_FUNDAMENTAL  : fsFundamental
 
+  const syncPPI = useCallback(async () => {
+    if (!user) return
+    setSyncing(true)
+    setSyncError(null)
+    try {
+      const result = await apiPost('/api/portfolio/sync')
+      setLastSync(result.timestamp ?? new Date().toISOString())
+      // Re-calculamos stress test con la cartera recién sincronizada
+      await refreshStress()
+    } catch (err) {
+      setSyncError(err.message || 'Error al sincronizar con PPI')
+    } finally {
+      setSyncing(false)
+    }
+  }, [user, refreshStress])
+
   return (
     <AppContext.Provider value={{
       user, authLoading, signIn, signOut, isDemo,
@@ -53,6 +76,7 @@ export function AppProvider({ children }) {
       distMode, setDistMode,
       portfolio, cotizaciones, resumen,
       catalizadores, stressTest, fundamental,
+      syncPPI, syncing, syncError, lastSync,
     }}>
       {children}
     </AppContext.Provider>

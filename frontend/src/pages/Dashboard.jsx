@@ -1,7 +1,7 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { useApp } from '../store/AppContext'
 import { usePrivacy } from '../hooks/usePrivacy'
-import { formatARS, formatUSD, formatPctShort } from '../utils/formatters'
+import { formatARS, formatUSD } from '../utils/formatters'
 import { TICKERS_TV } from '../data/mockPortfolio'
 
 import Header          from '../components/layout/Header'
@@ -28,40 +28,58 @@ const TABS = [
   { id: 'graficos',      label: 'Gráficos'     },
 ]
 
-const DIST_INSTRUMENTO = [
-  { name: 'Acciones AR', pct: 35, color: '#00e5a0' },
-  { name: 'CEDEARs',     pct: 30, color: '#4a9eff' },
-  { name: 'Liquidez',    pct: 12, color: '#f7b731' },
-  { name: 'ONs',         pct: 10, color: '#c084fc' },
-  { name: 'FCI',         pct: 8,  color: '#fb923c' },
-  { name: 'Bonos',       pct: 5,  color: '#f472b6' },
-]
-const DIST_MONEDA = [
-  { name: 'Pesos ARS',   pct: 38, color: '#4a9eff' },
-  { name: 'Dólares MEP', pct: 30, color: '#00e5a0' },
-  { name: 'Dólares CCL', pct: 32, color: '#00c47a' },
-]
+const CAT_META = {
+  acciones_ar: { name: 'Acciones AR', color: '#00e5a0' },
+  cedears:     { name: 'CEDEARs',     color: '#4a9eff' },
+  liquidez:    { name: 'Liquidez',    color: '#f7b731' },
+  ons:         { name: 'ONs',         color: '#c084fc' },
+  fci:         { name: 'FCI',         color: '#fb923c' },
+  bonos:       { name: 'Bonos',       color: '#f472b6' },
+}
 
 export default function Dashboard() {
   const { activeCurrency, distMode, setDistMode,
           cotizaciones, resumen, portfolio,
-          catalizadores, stressTest, fundamental } = useApp()
+          catalizadores, stressTest, fundamental,
+          lastSync } = useApp()
   const { privacyOn, toggle: togglePrivacy } = usePrivacy()
 
-  const [activeTab,           setActiveTab]           = useState('posiciones')
-  const [selectedTicker,      setSelectedTicker]      = useState(null)
-  const [modalOpen,           setModalOpen]           = useState(false)
-  const [toastMsg,            setToastMsg]            = useState('')
+  const [activeTab,      setActiveTab]      = useState('posiciones')
+  const [selectedTicker, setSelectedTicker] = useState(null)
+  const [modalOpen,      setModalOpen]      = useState(false)
+  const [toastMsg,       setToastMsg]       = useState('')
 
   const showToast = (msg) => {
     setToastMsg(msg)
     setTimeout(() => setToastMsg(''), 2500)
   }
 
+  // Mostrar toast cuando se completa una sincronización con PPI
+  useEffect(() => {
+    if (lastSync) showToast('✓ Cartera sincronizada con PPI')
+  }, [lastSync])
+
   const switchTab = (id) => {
     setActiveTab(id)
     window.scrollTo(0, 0)
   }
+
+  // ── Distribución para DonutChart (desde datos reales del resumen) ────────
+  const distInstrumento = Object.entries(resumen?.composicion_pct ?? {})
+    .filter(([, pct]) => pct > 0.1)
+    .map(([cat, pct]) => ({
+      name:  CAT_META[cat]?.name  ?? cat,
+      color: CAT_META[cat]?.color ?? '#888',
+      pct:   parseFloat(pct.toFixed(1)),
+    }))
+
+  // Aproximación moneda: CEDEARs + ONs → dolarizados; resto → ARS
+  const pctUSD = (resumen?.composicion_pct?.cedears ?? 0) + (resumen?.composicion_pct?.ons ?? 0)
+  const pctARS = Math.max(0, parseFloat((100 - pctUSD).toFixed(1)))
+  const distMoneda = [
+    { name: 'Pesos ARS',      pct: pctARS,                         color: '#4a9eff' },
+    { name: 'Dólares (aprox)', pct: parseFloat(pctUSD.toFixed(1)), color: '#00e5a0' },
+  ]
 
   // ── Total valorizado según moneda activa ──────────────────────────────────
   const totalARS  = resumen.valor_total_ars
@@ -100,7 +118,7 @@ export default function Dashboard() {
 
   return (
     <div className="app">
-      <Header />
+      <Header onSyncDone={showToast} />
       <DemoBanner />
 
       {/* ── HERO ── */}
@@ -136,7 +154,7 @@ export default function Dashboard() {
               <button className={`dist-btn ${distMode === 'moneda' ? 'active' : ''}`} onClick={() => setDistMode('moneda')}>Moneda</button>
             </div>
           </div>
-          <DonutChart data={distMode === 'instrumento' ? DIST_INSTRUMENTO : DIST_MONEDA} />
+          <DonutChart data={distMode === 'instrumento' ? distInstrumento : distMoneda} />
         </div>
       </div>
 
