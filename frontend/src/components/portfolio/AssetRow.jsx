@@ -114,10 +114,20 @@ export default function AssetRow({ position, expanded, onToggle, isCedear, isBon
             </div>
           )}
 
-          {/* Rendimiento USD */}
+          {/* Rendimiento del día */}
+          {position.rend_dia_pct != null && (
+            <div>
+              <div className="tg-label">Rend. Día</div>
+              <div className={`tg-val ${position.rend_dia_pct >= 0 ? 'pos' : 'neg'}`}>
+                {formatPctShort(position.rend_dia_pct)}
+              </div>
+            </div>
+          )}
+
+          {/* Rendimiento histórico USD */}
           {position.rend_usd_pct != null && (
             <div>
-              <div className="tg-label">Rend. USD</div>
+              <div className="tg-label">Rend. Histórico</div>
               <div className={`tg-val ${position.rend_usd_pct >= 0 ? 'pos' : 'neg'}`}>
                 {formatPctShort(position.rend_usd_pct)}
               </div>

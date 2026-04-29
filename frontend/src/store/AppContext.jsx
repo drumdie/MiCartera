@@ -76,6 +76,7 @@ export function AppProvider({ children }) {
     setSyncing(true)
     setSyncError(null)
     try {
+      await apiPost('/api/prices/refresh')
       const result = await apiPost('/api/portfolio/sync')
       setLastSync(result.timestamp ?? new Date().toISOString())
       await refreshStress()

@@ -11,13 +11,13 @@ GET /api/prices/refresh
 """
 from __future__ import annotations
 
+import asyncio
 from datetime import datetime, timezone, date, timedelta
 
 import httpx
 from fastapi import APIRouter, HTTPException, Request
 from firebase_admin import firestore
 
-from app.services.ppi_client import ppi_client, PPIError
 from app.models.market import Cotizaciones
 
 router = APIRouter(prefix="/api/prices", tags=["prices"])
@@ -51,15 +51,32 @@ async def _fetch_bcra_variable(var_id: int) -> float:
     return 0.0
 
 
+async def _fetch_dolarapi(slug: str) -> float:
+    """
+    Obtiene el promedio compra/venta de dolarapi.com.
+    slug: "bolsa" (MEP) | "contadoconliqui" (CCL)
+    """
+    try:
+        async with httpx.AsyncClient(timeout=8) as client:
+            resp = await client.get(f"https://dolarapi.com/v1/dolares/{slug}")
+            if resp.is_success:
+                data = resp.json()
+                compra = float(data.get("compra") or 0)
+                venta  = float(data.get("venta")  or 0)
+                if compra > 0 and venta > 0:
+                    return round((compra + venta) / 2, 2)
+    except Exception as exc:
+        print(f"[DOLARAPI] Error {slug}: {exc}")
+    return 0.0
+
+
 async def _build_cotizaciones() -> dict:
     """Obtiene todas las cotizaciones y construye el documento para Firestore."""
-    # PPI → MEP y CCL
-    try:
-        mep = await ppi_client.get_dolar_mep()
-        ccl = await ppi_client.get_dolar_ccl()
-    except PPIError as exc:
-        print(f"[PPI] No se pudo obtener MEP/CCL: {exc}")
-        mep, ccl = 0.0, 0.0
+    # dolarapi.com → MEP y CCL (promedio compra/venta)
+    mep, ccl = await asyncio.gather(
+        _fetch_dolarapi("bolsa"),
+        _fetch_dolarapi("contadoconliqui"),
+    )
 
     # BCRA → BNA, Oficial y Riesgo País (APIs públicas, sin credenciales)
     bna        = await _fetch_bcra_variable(_VAR_DOLAR_BNA)

@@ -10,6 +10,7 @@ El uid viene de request.state.uid, inyectado por FirebaseAuthMiddleware.
 """
 from __future__ import annotations
 
+import asyncio
 from datetime import datetime, timezone
 
 from fastapi import APIRouter, HTTPException, Request
@@ -27,10 +28,19 @@ _CATEGORIA_MAP: dict[str, str] = {
     "cedears":                  "cedears",
     "bonos":                    "bonos",
     "obligaciones negociables": "ons",
+    "ons":                      "ons",
     "fondos comunes de inversión": "fci",
     "fci":                      "fci",
     "disponibilidades":         "liquidez",
     "cash":                     "liquidez",
+}
+
+# Parámetros para MarketData/Current por categoría
+_MARKET_PARAMS: dict[str, tuple[str, str]] = {
+    "acciones_ar": ("ACCIONES", "A-48HS"),
+    "cedears":     ("CEDEARS",  "A-48HS"),
+    "bonos":       ("BONOS",    "A-24HS"),
+    "ons":         ("BONOS",    "A-24HS"),
 }
 
 
@@ -38,14 +48,72 @@ def _normalize_categoria(ppi_category: str) -> str:
     return _CATEGORIA_MAP.get(ppi_category.lower().strip(), "acciones_ar")
 
 
-def _transform_position(item: dict) -> dict:
+async def _fetch_opening_prices(grupos_raw: dict[str, list[dict]]) -> dict[str, float]:
+    """Consulta MarketData/Current en paralelo y retorna {ticker: openingPrice}."""
+    tasks: list[tuple[str, str, str]] = []
+    for cat, (inst_type, settlement) in _MARKET_PARAMS.items():
+        for item in grupos_raw.get(cat, []):
+            ticker = item.get("ticker", item.get("Ticker", ""))
+            if ticker:
+                tasks.append((ticker, inst_type, settlement))
+
+    if not tasks:
+        return {}
+
+    results = await asyncio.gather(
+        *(ppi_client.get_market_data(t, it, s) for t, it, s in tasks),
+        return_exceptions=True,
+    )
+
+    opening: dict[str, float] = {}
+    for (ticker, _itype, _sett), data in zip(tasks, results):
+        if not isinstance(data, dict):
+            continue
+        # Preferimos marketChangePercent de PPI (vs cierre anterior, igual que el broker)
+        pct_str = data.get("marketChangePercent", "")
+        try:
+            pct = float(str(pct_str).replace("%", "").strip())
+            opening[ticker] = pct
+        except (ValueError, TypeError):
+            # Fallback: calcular vs previousClose
+            prev = float(data.get("previousClose") or 0)
+            price = float(data.get("price") or 0)
+            if prev > 0 and price > 0:
+                opening[ticker] = round((price - prev) / prev * 100, 2)
+    return opening
+
+
+def _transform_position(
+    item: dict,
+    dolar_mep: float = 0.0,
+    rend_dia_ppi: float | None = None,
+) -> dict:
     """Transforma un item de la API PPI al formato MiCartera."""
-    ticker      = item.get("Ticker", item.get("ticker", ""))
-    descripcion = item.get("Description", item.get("description", ticker))
-    cantidad    = float(item.get("Amount", item.get("amount", 0)))
-    precio      = float(item.get("Price", item.get("price", 0)))
-    valor       = float(item.get("MarketValue", item.get("marketValue", cantidad * precio)))
-    costo_prom  = float(item.get("AverageCost", item.get("averageCost", 0)))
+    ticker      = item.get("ticker",      item.get("Ticker", ""))
+    descripcion = item.get("description", item.get("Description", ticker))
+    cantidad    = float(item.get("quantity",    item.get("Amount", 0)))
+    precio      = float(item.get("price",       item.get("Price", 0)))
+    valor       = float(item.get("amount",      item.get("MarketValue", cantidad * precio)))
+    costo_prom  = float(item.get("averagePrice", item.get("AverageCost", 0)))
+
+    currency = item.get("currency", "Pesos")
+
+    # Guardar valores pre-conversión para calcular rendimientos en moneda original
+    precio_orig     = precio
+    costo_prom_orig = costo_prom
+
+    if "olar" in currency and dolar_mep > 0:
+        precio     = round(precio     * dolar_mep, 2)
+        valor      = round(valor      * dolar_mep, 2)
+        costo_prom = round(costo_prom * dolar_mep, 2)
+
+    # Rendimiento histórico vs costo promedio de compra (moneda original)
+    rend_pct = 0.0
+    if costo_prom_orig > 0 and precio_orig > 0:
+        rend_pct = round((precio_orig - costo_prom_orig) / costo_prom_orig * 100, 2)
+
+    # Rendimiento del día: viene directo de PPI (marketChangePercent vs cierre anterior)
+    rend_dia_pct = round(rend_dia_ppi, 2) if rend_dia_ppi is not None else 0.0
 
     pos = {
         "ticker":              ticker,
@@ -53,16 +121,15 @@ def _transform_position(item: dict) -> dict:
         "cantidad":            cantidad,
         "precio_actual_ars":   precio,
         "valor_corriente_ars": valor,
-        "pct_cartera":         0.0,  # se recalcula en el frontend
-        "rend_usd_pct":        0.0,  # requiere cotizaciones para calcular correctamente
-        "rend_ars_pct":        0.0,
+        "pct_cartera":         0.0,
+        "rend_dia_pct":        rend_dia_pct,
+        "rend_usd_pct":        rend_pct,
+        "rend_ars_pct":        rend_pct,
     }
 
-    # Costo promedio disponible → precio de compra en ARS
     if costo_prom > 0:
         pos["precio_compra_ars"] = costo_prom
 
-    # CEDEARs: PPI puede informar el subyacente
     subyacente = item.get("UnderlyingTicker", item.get("underlyingTicker", ""))
     if subyacente:
         pos["subyacente_usd"]     = subyacente
@@ -113,25 +180,53 @@ async def sync_portfolio(request: Request):
     uid = request.state.uid
 
     try:
-        items = await ppi_client.get_account_positions()
-    except PPIError as exc:
-        raise HTTPException(status_code=502, detail=f"Error al consultar PPI: {exc}")
+        items, avg_costs = await asyncio.gather(
+            ppi_client.get_account_positions(),
+            ppi_client.get_average_costs(),
+        )
+    except Exception as exc:
+        raise HTTPException(status_code=502, detail=f"Error al consultar PPI: {type(exc).__name__}: {exc}")
 
-    # Agrupar por categoría
-    grupos: dict[str, list[dict]] = {
-        "acciones_ar": [],
-        "cedears":     [],
-        "bonos":       [],
-        "ons":         [],
-        "fci":         [],
-        "liquidez":    [],
+    # Leer tipo de cambio MEP para convertir instrumentos en USD → ARS
+    db = firestore.client()
+    cotiz_snap = db.collection("market").document("cotizaciones").get()
+    cotiz     = cotiz_snap.to_dict() if cotiz_snap.exists else {}
+    dolar_mep = float(cotiz.get("dolar_mep") or 0)
+
+    if dolar_mep <= 0:
+        try:
+            dolar_mep = await ppi_client.get_dolar_mep()
+        except Exception:
+            pass
+
+    # Pre-agrupar items raw por categoría (inyectando avg_cost si disponible)
+    grupos_raw: dict[str, list[dict]] = {
+        "acciones_ar": [], "cedears": [], "bonos": [],
+        "ons": [], "fci": [], "liquidez": [],
     }
     for item in items:
         cat = _normalize_categoria(item.get("Category", item.get("category", "")))
-        grupos[cat].append(_transform_position(item))
+        ticker = item.get("ticker", item.get("Ticker", ""))
+        avg_cost = avg_costs.get(ticker)
+        if avg_cost is not None:
+            item = {**item, "averagePrice": avg_cost}
+        grupos_raw[cat].append(item)
+
+    # Obtener precios de apertura en paralelo para calcular rend_dia_pct
+    opening_prices = await _fetch_opening_prices(grupos_raw)
+
+    # Transformar al formato MiCartera
+    grupos: dict[str, list[dict]] = {}
+    for cat, raw_items in grupos_raw.items():
+        grupos[cat] = [
+            _transform_position(
+                item, dolar_mep,
+                opening_prices.get(item.get("ticker", item.get("Ticker", ""))),
+            )
+            for item in raw_items
+        ]
 
     # Escribir en Firestore (Admin SDK → bypasea reglas de seguridad)
-    db = firestore.client()
     user_ref = db.collection("users").document(uid)
 
     for cat, posiciones in grupos.items():

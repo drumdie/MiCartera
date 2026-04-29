@@ -2,7 +2,7 @@ import { useState, useEffect, useRef, useCallback } from 'react'
 import { GoogleAuthProvider, reauthenticateWithPopup } from 'firebase/auth'
 import { auth } from '../services/firebase'
 
-const INACTIVITY_TIMEOUT = 60 * 1000 // 1 minuto
+const INACTIVITY_TIMEOUT = 3 * 60 * 1000 // 3 minutos
 
 const provider = new GoogleAuthProvider()
 
