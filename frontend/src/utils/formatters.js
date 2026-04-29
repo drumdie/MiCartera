@@ -5,6 +5,14 @@ export function formatARS(amount) {
   return 'AR$ ' + Math.round(amount).toLocaleString('es-AR')
 }
 
+export function formatARSPrice(amount) {
+  if (amount == null || isNaN(amount)) return '—'
+  return 'AR$ ' + amount.toLocaleString('es-AR', {
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+  })
+}
+
 export function formatUSD(amount, decimals = 2) {
   if (amount == null || isNaN(amount)) return '—'
   return 'US$ ' + amount.toLocaleString('es-AR', {

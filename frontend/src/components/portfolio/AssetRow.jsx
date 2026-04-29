@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { useCurrency } from '../../hooks/useCurrency'
-import { formatARS, formatPctShort } from '../../utils/formatters'
+import { formatARS, formatARSPrice, formatPctShort } from '../../utils/formatters'
 import PrivacyMask from '../ui/PrivacyMask'
 import TacticalBadge, { tacticalBarClass } from './TacticalBadge'
 
@@ -52,7 +52,7 @@ export default function AssetRow({ position, expanded, onToggle, isCedear, isBon
           {position.precio_compra_ars != null && (
             <div>
               <div className="tg-label">P. Compra ARS</div>
-              <div className="tg-val"><PrivacyMask>{formatARS(position.precio_compra_ars)}</PrivacyMask></div>
+              <div className="tg-val"><PrivacyMask>{formatARSPrice(position.precio_compra_ars)}</PrivacyMask></div>
             </div>
           )}
 
@@ -60,7 +60,7 @@ export default function AssetRow({ position, expanded, onToggle, isCedear, isBon
           {position.precio_actual_ars != null && (
             <div>
               <div className="tg-label">P. Actual ARS</div>
-              <div className="tg-val"><PrivacyMask>{formatARS(position.precio_actual_ars)}</PrivacyMask></div>
+              <div className="tg-val"><PrivacyMask>{formatARSPrice(position.precio_actual_ars)}</PrivacyMask></div>
             </div>
           )}
 
