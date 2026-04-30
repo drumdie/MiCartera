@@ -50,3 +50,6 @@ Thumbs.db
 
 # ── Binarios locales ──────────────────────────────────────────────────────────
 *.exe
+
+# ── Claude Code (configuración local) ────────────────────────────────────────
+.claude/
