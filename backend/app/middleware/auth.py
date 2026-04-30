@@ -9,6 +9,10 @@ PUBLIC_PATHS = {"/api/health", "/api/docs", "/openapi.json"}
 
 class FirebaseAuthMiddleware(BaseHTTPMiddleware):
     async def dispatch(self, request: Request, call_next):
+        # Preflight CORS — debe pasar sin auth para que CORSMiddleware responda
+        if request.method == "OPTIONS":
+            return await call_next(request)
+
         if request.url.path in PUBLIC_PATHS:
             return await call_next(request)
 

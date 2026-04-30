@@ -8,14 +8,13 @@ class Settings(BaseSettings):
     FIREBASE_CREDENTIALS_PATH: str = ""
     FIREBASE_PROJECT_ID: str = ""
 
-    # PPI API — credenciales del panel de desarrolladores de PPI
-    # PPI_API_KEY    → clave de la aplicación (portal developer)
-    # PPI_API_SECRET → secreto de la aplicación (portal developer)
-    # PPI_ACCOUNT_NUMBER → número de comitente del usuario (para consultas de cuenta)
-    PPI_API_KEY:        str = ""
-    PPI_API_SECRET:     str = ""
-    PPI_ACCOUNT_NUMBER: str = ""
-    PPI_BASE_URL:       str = "https://clientapi.portfoliopersonal.com"
+    # PPI API — 4 credenciales del panel Gestiones → Gestión de servicio API
+    PPI_AUTHORIZED_CLIENT: str = ""
+    PPI_CLIENT_KEY:        str = ""
+    PPI_API_KEY:           str = ""
+    PPI_API_SECRET:        str = ""
+    PPI_ACCOUNT_NUMBER:    str = ""
+    PPI_BASE_URL:          str = "https://clientapi.portfoliopersonal.com"
 
     # CORS
     ALLOWED_ORIGINS: list[str] = ["http://localhost:5173"]

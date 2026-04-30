@@ -42,13 +42,22 @@ function computePortfolio(raw, cotizaciones) {
 
   const pct = (sub) => total > 0 ? (sub / total) * 100 : 0
 
+  const withPosPct = (cat) => ({
+    ...cat,
+    posiciones: cat.posiciones.map(p => ({
+      ...p,
+      pct_cartera: total > 0 ? ((p.valor_corriente_ars ?? 0) / total) * 100 : 0,
+    })),
+    pct_cartera: pct(cat.subtotal_ars),
+  })
+
   return {
-    acciones_ar: { ...acciones_ar, pct_cartera: pct(acciones_ar.subtotal_ars) },
-    cedears:     { ...cedears,     pct_cartera: pct(cedears.subtotal_ars)     },
-    bonos:       { ...bonos,       pct_cartera: pct(bonos.subtotal_ars)       },
-    ons:         { ...ons,         pct_cartera: pct(ons.subtotal_ars)         },
-    fci:         { ...fci,         pct_cartera: pct(fci.subtotal_ars)         },
-    liquidez:    { ...liquidez,    pct_cartera: pct(liquidez.subtotal_ars)    },
+    acciones_ar: withPosPct(acciones_ar),
+    cedears:     withPosPct(cedears),
+    bonos:       withPosPct(bonos),
+    ons:         withPosPct(ons),
+    fci:         withPosPct(fci),
+    liquidez:    { ...liquidez, pct_cartera: pct(liquidez.subtotal_ars) },
     _valor_total_ars: total,
   }
 }
