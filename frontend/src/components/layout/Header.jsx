@@ -2,7 +2,7 @@ import { useApp } from '../../store/AppContext'
 import { formatARS } from '../../utils/formatters'
 
 export default function Header({ onSyncDone }) {
-  const { cotizaciones, user, signOut, isDemo, syncPPI, syncing, syncError, lastSync } = useApp()
+  const { cotizaciones, user, signOut, isDemo, syncPPI, syncing, syncError, lastSync, isStale, ultimaSync } = useApp()
   const { dolar_mep, riesgo_pais_pb } = cotizaciones
 
   const handleSync = async () => {
@@ -26,12 +26,27 @@ export default function Header({ onSyncDone }) {
             }
           </div>
           {/* Estado de sincronización */}
-          {!isDemo && lastSync && !syncing && (
-            <div style={{ fontSize: 8, color: 'var(--muted)', opacity: 0.5, marginTop: 2 }}>
-              Sync: {new Date(lastSync).toLocaleTimeString('es-AR', { hour: '2-digit', minute: '2-digit' })}
-            </div>
-          )}
-          {syncError && (
+          {!isDemo && !syncing && (() => {
+            const refDate = ultimaSync ?? lastSync
+            const label = refDate
+              ? new Date(refDate).toLocaleString('es-AR', {
+                  weekday: 'short', day: '2-digit', month: '2-digit',
+                  hour: '2-digit', minute: '2-digit',
+                })
+              : null
+            if (isStale && label) return (
+              <div style={{ fontSize: 8, color: '#f7b731', marginTop: 2 }}>
+                ⚠ Mercado cerrado · datos del {label}
+              </div>
+            )
+            if (label) return (
+              <div style={{ fontSize: 8, color: 'var(--muted)', opacity: 0.5, marginTop: 2 }}>
+                Sync: {label}
+              </div>
+            )
+            return null
+          })()}
+          {syncError && !isStale && (
             <div style={{ fontSize: 8, color: 'var(--red, #e05c5c)', marginTop: 2 }}>
               {syncError}
             </div>

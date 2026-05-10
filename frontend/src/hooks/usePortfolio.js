@@ -136,6 +136,20 @@ export function usePortfolio(uid) {
   )
   const resumen = useMemo(() => computeResumen(portfolio), [portfolio])
 
+  // Leer is_stale y ultima_sync desde cualquier categoría del portfolio raw.
+  // El backend escribe estos campos en cada doc; tomamos el más reciente.
+  const { isStale, ultimaSync } = useMemo(() => {
+    if (!rawPortfolio) return { isStale: false, ultimaSync: null }
+    const docs = Object.values(rawPortfolio)
+    const stale = docs.some(d => d?.is_stale === true)
+    const latest = docs
+      .map(d => d?.ultima_sync ?? '')
+      .filter(Boolean)
+      .sort()
+      .at(-1) ?? null
+    return { isStale: stale, ultimaSync: latest }
+  }, [rawPortfolio])
+
   return {
     portfolio,
     cotizaciones,
@@ -145,5 +159,7 @@ export function usePortfolio(uid) {
     refreshStress: fetchStress,
     fundamental: MOCK_FUNDAMENTAL,
     loading,
+    isStale,
+    ultimaSync,
   }
 }

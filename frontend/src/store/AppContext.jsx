@@ -57,6 +57,8 @@ export function AppProvider({ children }) {
     stressTest:    fsStressTest,
     refreshStress,
     fundamental:   fsFundamental,
+    isStale:       fsIsStale,
+    ultimaSync:    fsUltimaSync,
   } = usePortfolio(user?.uid)
 
   // isDemo: solo cuando no hay sesión activa
@@ -78,8 +80,14 @@ export function AppProvider({ children }) {
     try {
       await apiPost('/api/prices/refresh')
       const result = await apiPost('/api/portfolio/sync')
-      setLastSync(result.timestamp ?? new Date().toISOString())
-      await refreshStress()
+      // status "sin_datos_frescos": PPI no disponible, Firestore intacto
+      if (result.status === 'sin_datos_frescos') {
+        setSyncError('Mercado cerrado — mostrando últimos datos conocidos')
+        setLastSync(result.ultima_sync_exitosa ?? null)
+      } else {
+        setLastSync(result.timestamp ?? new Date().toISOString())
+        await refreshStress()
+      }
     } catch (err) {
       setSyncError(err.message || 'Error al sincronizar con PPI')
     } finally {
@@ -96,6 +104,8 @@ export function AppProvider({ children }) {
       portfolio, cotizaciones, resumen,
       catalizadores, stressTest, fundamental,
       syncPPI, syncing, syncError, lastSync,
+      isStale: !isDemo && (fsIsStale ?? false),
+      ultimaSync: !isDemo ? (fsUltimaSync ?? null) : null,
     }}>
       {children}
     </AppContext.Provider>
