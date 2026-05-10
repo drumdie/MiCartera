@@ -96,24 +96,38 @@ def _transform_position(
     valor       = float(item.get("amount",      item.get("MarketValue", cantidad * precio)))
     costo_prom  = float(item.get("averagePrice", item.get("AverageCost", 0)))
 
-    currency = item.get("currency", "Pesos")
+    currency = item.get("currency", item.get("Currency", "Pesos"))
 
     # Guardar valores pre-conversión para calcular rendimientos en moneda original
     precio_orig     = precio
     costo_prom_orig = costo_prom
 
-    if "olar" in currency and dolar_mep > 0:
+    if "olar" in currency.lower() and dolar_mep > 0:
         precio     = round(precio     * dolar_mep, 2)
         valor      = round(valor      * dolar_mep, 2)
         costo_prom = round(costo_prom * dolar_mep, 2)
 
-    # Rendimiento histórico vs costo promedio de compra (moneda original)
-    rend_pct = 0.0
+    # Rendimiento histórico vs costo promedio de compra
+    # is_usd: precio_orig y costo_prom_orig están en USD → rend_usd_pct es el correcto
+    # is_ars: están en ARS → rend_ars_pct es el correcto; rend_usd_pct requeriría MEP histórico
+    is_usd = "olar" in currency.lower()
+    rend_ars_pct = 0.0
+    rend_usd_pct = 0.0
     if costo_prom_orig > 0 and precio_orig > 0:
-        rend_pct = round((precio_orig - costo_prom_orig) / costo_prom_orig * 100, 2)
+        rend_orig = round((precio_orig - costo_prom_orig) / costo_prom_orig * 100, 2)
+        if is_usd:
+            rend_usd_pct = rend_orig
+            rend_ars_pct = rend_orig  # proxy: no incluye variación del MEP durante la tenencia
+        else:
+            rend_ars_pct = rend_orig
 
     # Rendimiento del día: viene directo de PPI (marketChangePercent vs cierre anterior)
     rend_dia_pct = round(rend_dia_ppi, 2) if rend_dia_ppi is not None else 0.0
+
+    # Rendimiento absoluto — costo_prom y valor ya están en ARS (conversión ocurrió arriba)
+    costo_total_ars  = round(costo_prom * cantidad, 2) if costo_prom > 0 else 0.0
+    ganancia_ars     = round(valor - costo_total_ars, 2) if costo_total_ars > 0 else 0.0
+    ganancia_usd_mep = round(ganancia_ars / dolar_mep, 2) if dolar_mep > 0 and costo_total_ars > 0 else 0.0
 
     pos = {
         "ticker":              ticker,
@@ -122,9 +136,12 @@ def _transform_position(
         "precio_actual_ars":   precio,
         "valor_corriente_ars": valor,
         "pct_cartera":         0.0,
+        "costo_total_ars":     costo_total_ars,
+        "ganancia_ars":        ganancia_ars,
+        "ganancia_usd_mep":    ganancia_usd_mep,
         "rend_dia_pct":        rend_dia_pct,
-        "rend_usd_pct":        rend_pct,
-        "rend_ars_pct":        rend_pct,
+        "rend_usd_pct":        rend_usd_pct,
+        "rend_ars_pct":        rend_ars_pct,
     }
 
     if costo_prom > 0:
@@ -140,11 +157,19 @@ def _transform_position(
 
 
 def _build_categoria(posiciones: list[dict]) -> dict:
-    subtotal = sum(p.get("valor_corriente_ars", 0) for p in posiciones)
+    subtotal     = sum(p.get("valor_corriente_ars", 0) for p in posiciones)
+    costo_total  = sum(p.get("costo_total_ars",    0) for p in posiciones)
+    ganancia     = sum(p.get("ganancia_ars",        0) for p in posiciones)
+    ganancia_usd = sum(p.get("ganancia_usd_mep",   0) for p in posiciones)
+    rend_pct     = round(ganancia / costo_total * 100, 2) if costo_total > 0 else 0.0
     return {
-        "posiciones":    posiciones,
-        "subtotal_ars":  round(subtotal, 2),
-        "pct_cartera":   0.0,  # el frontend lo recalcula
+        "posiciones":       posiciones,
+        "subtotal_ars":     round(subtotal, 2),
+        "costo_total_ars":  round(costo_total, 2),
+        "ganancia_ars":     round(ganancia, 2),
+        "ganancia_usd_mep": round(ganancia_usd, 2),
+        "rend_pct":         rend_pct,
+        "pct_cartera":      0.0,
     }
 
 
@@ -167,6 +192,9 @@ def _build_liquidez(posiciones: list[dict]) -> dict:
     }
 
 
+# Categorías que tienen cotización de mercado en tiempo real
+_CATS_CON_MERCADO = set(_MARKET_PARAMS.keys())
+
 # ---------------------------------------------------------------------------
 # Endpoint
 # ---------------------------------------------------------------------------
@@ -176,19 +204,47 @@ async def sync_portfolio(request: Request):
     """
     Sincroniza el portfolio del usuario desde PPI a Firestore.
     No requiere body — usa el uid del Firebase token verificado por middleware.
+
+    Manejo de datos obsoletos:
+    - Si PPI no responde (mercado cerrado, fin de semana): retorna status "sin_datos_frescos"
+      sin tocar Firestore — el frontend sigue mostrando los últimos datos conocidos.
+    - Si PPI responde posiciones pero no market data (mercado cerrado a mitad del proceso):
+      preserva el último rend_dia_pct conocido en lugar de sobreescribir con 0.
+    - Escribe is_stale=True en Firestore cuando los datos de mercado no están frescos.
     """
     uid = request.state.uid
+    db = firestore.client()
+    user_ref = db.collection("users").document(uid)
 
+    # Leer portfolio existente antes de intentar PPI.
+    # Sirve como fallback para rend_dia_pct cuando el mercado está cerrado,
+    # y como fuente de ultima_sync si PPI falla completamente.
+    _CATS = ["acciones_ar", "cedears", "bonos", "ons", "fci", "liquidez"]
+    existing: dict[str, dict] = {}
+    for cat in _CATS:
+        snap = user_ref.collection("portfolio").document(cat).get()
+        if snap.exists:
+            existing[cat] = snap.to_dict()
+
+    # Intentar sync desde PPI. Si falla, Firestore queda intacto.
     try:
         items, avg_costs = await asyncio.gather(
             ppi_client.get_account_positions(),
             ppi_client.get_average_costs(),
         )
     except Exception as exc:
-        raise HTTPException(status_code=502, detail=f"Error al consultar PPI: {type(exc).__name__}: {exc}")
+        ultima_sync = max(
+            (d.get("ultima_sync", "") for d in existing.values()),
+            default="",
+        )
+        return {
+            "status": "sin_datos_frescos",
+            "stale": True,
+            "ultima_sync_exitosa": ultima_sync,
+            "detalle": str(exc),
+        }
 
-    # Leer tipo de cambio MEP para convertir instrumentos en USD → ARS
-    db = firestore.client()
+    # Leer tipo de cambio MEP: Firestore → PPI → dolarapi.com
     cotiz_snap = db.collection("market").document("cotizaciones").get()
     cotiz     = cotiz_snap.to_dict() if cotiz_snap.exists else {}
     dolar_mep = float(cotiz.get("dolar_mep") or 0)
@@ -196,6 +252,20 @@ async def sync_portfolio(request: Request):
     if dolar_mep <= 0:
         try:
             dolar_mep = await ppi_client.get_dolar_mep()
+        except Exception:
+            pass
+
+    if dolar_mep <= 0:
+        try:
+            import httpx
+            async with httpx.AsyncClient(timeout=8) as client:
+                resp = await client.get("https://dolarapi.com/v1/dolares/bolsa")
+                if resp.is_success:
+                    data = resp.json()
+                    compra = float(data.get("compra") or 0)
+                    venta  = float(data.get("venta")  or 0)
+                    if compra > 0 and venta > 0:
+                        dolar_mep = round((compra + venta) / 2, 2)
         except Exception:
             pass
 
@@ -215,33 +285,47 @@ async def sync_portfolio(request: Request):
     # Obtener precios de apertura en paralelo para calcular rend_dia_pct
     opening_prices = await _fetch_opening_prices(grupos_raw)
 
-    # Transformar al formato MiCartera
+    # Detectar si el mercado está abierto: hay instrumentos que requieren market data
+    # pero opening_prices llegó vacío → mercado cerrado o fuera de horario.
+    hay_tickers_con_mercado = any(grupos_raw.get(cat) for cat in _CATS_CON_MERCADO)
+    mercado_abierto = not hay_tickers_con_mercado or bool(opening_prices)
+
+    # Construir mapa de último rend_dia_pct conocido por ticker (desde Firestore)
+    rend_dia_conocido: dict[str, float] = {}
+    for old_data in existing.values():
+        for pos in old_data.get("posiciones", []):
+            tk = pos.get("ticker", "")
+            if tk:
+                rend_dia_conocido[tk] = pos.get("rend_dia_pct", 0.0)
+
+    # Transformar al formato MiCartera, preservando rend_dia_pct cuando no hay dato fresco
     grupos: dict[str, list[dict]] = {}
     for cat, raw_items in grupos_raw.items():
-        grupos[cat] = [
-            _transform_position(
-                item, dolar_mep,
-                opening_prices.get(item.get("ticker", item.get("Ticker", ""))),
-            )
-            for item in raw_items
-        ]
+        grupos[cat] = []
+        for item in raw_items:
+            ticker = item.get("ticker", item.get("Ticker", ""))
+            rend_dia = opening_prices.get(ticker)
+            if rend_dia is None and ticker in rend_dia_conocido:
+                rend_dia = rend_dia_conocido[ticker]
+            grupos[cat].append(_transform_position(item, dolar_mep, rend_dia))
 
-    # Escribir en Firestore (Admin SDK → bypasea reglas de seguridad)
-    user_ref = db.collection("users").document(uid)
-
+    # Escribir en Firestore
+    now = datetime.now(timezone.utc).isoformat()
     for cat, posiciones in grupos.items():
         data = (
             _build_liquidez(posiciones)
             if cat == "liquidez"
             else _build_categoria(posiciones)
         )
-        data["ultima_sync"] = datetime.now(timezone.utc).isoformat()
+        data["ultima_sync"] = now
+        data["is_stale"]    = not mercado_abierto
         user_ref.collection("portfolio").document(cat).set(data)
 
     return {
         "status": "ok",
         "uid": uid,
+        "stale": not mercado_abierto,
         "categorias_sincronizadas": list(grupos.keys()),
         "total_posiciones": sum(len(v) for v in grupos.values()),
-        "timestamp": datetime.now(timezone.utc).isoformat(),
+        "timestamp": now,
     }
