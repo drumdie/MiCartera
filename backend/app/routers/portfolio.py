@@ -225,10 +225,9 @@ async def sync_portfolio(request: Request):
     uid = request.state.uid
     db = firestore.client()
     user_ref = db.collection("users").document(uid)
+    meta_ref  = user_ref.collection("meta")
 
-    # Leer portfolio existente antes de intentar PPI.
-    # Sirve como fallback para rend_dia_pct cuando el mercado está cerrado,
-    # y como fuente de ultima_sync si PPI falla completamente.
+    # Leer en paralelo: portfolio existente + cache de costos promedios
     _CATS = ["acciones_ar", "cedears", "bonos", "ons", "fci", "liquidez"]
     existing: dict[str, dict] = {}
     for cat in _CATS:
@@ -236,12 +235,21 @@ async def sync_portfolio(request: Request):
         if snap.exists:
             existing[cat] = snap.to_dict()
 
+    cache_snap   = meta_ref.document("avg_costs").get()
+    cached_state = None
+    if cache_snap.exists:
+        cached = cache_snap.to_dict()
+        if cached.get("full_sync_completed"):
+            cached_state = cached
+            # La primera vez (full_sync_completed=False) siempre corre el sync completo
+
     # Intentar sync desde PPI. Si falla, Firestore queda intacto.
     try:
-        items, avg_costs = await asyncio.gather(
+        items, avg_result = await asyncio.gather(
             ppi_client.get_account_positions(),
-            ppi_client.get_average_costs(),
+            ppi_client.compute_avg_costs(cached_state),
         )
+        avg_costs, avg_costs_state = avg_result
     except Exception as exc:
         ultima_sync = max(
             (d.get("ultima_sync", "") for d in existing.values()),
@@ -335,6 +343,9 @@ async def sync_portfolio(request: Request):
         data["ultima_sync"] = now
         data["is_stale"]    = not mercado_abierto
         user_ref.collection("portfolio").document(cat).set(data)
+
+    # Persistir cache de costos promedios para syncs incrementales futuros
+    meta_ref.document("avg_costs").set(avg_costs_state)
 
     return {
         "status": "ok",

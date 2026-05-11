@@ -21,6 +21,59 @@ class PPIError(Exception):
     pass
 
 
+# ---------------------------------------------------------------------------
+# Cache en memoria del MEP histórico (bluelytics.com.ar)
+# Se carga una sola vez por proceso y se reutiliza en todos los syncs.
+# ---------------------------------------------------------------------------
+_mep_history_cache: dict[str, float] = {}   # {"2023-11-22": 987.5, ...}
+_mep_history_loaded: bool = False
+
+
+async def _ensure_mep_history() -> dict[str, float]:
+    """
+    Descarga el historial completo de MEP desde bluelytics.com.ar y lo guarda
+    en memoria. La próxima llamada devuelve el cache sin volver a descargar.
+    Formato de retorno: {"YYYY-MM-DD": tasa_venta, ...}
+    """
+    global _mep_history_cache, _mep_history_loaded
+    if _mep_history_loaded:
+        return _mep_history_cache
+
+    try:
+        async with httpx.AsyncClient(timeout=15) as client:
+            resp = await client.get("https://api.bluelytics.com.ar/v2/evolution.json")
+            if resp.is_success:
+                data = resp.json()
+                mep_entries = data.get("MEP") or data.get("mep") or []
+                for entry in mep_entries:
+                    date_str = str(entry.get("date", ""))[:10]
+                    sell     = float(entry.get("sell") or entry.get("venta") or 0)
+                    if date_str and sell > 0:
+                        _mep_history_cache[date_str] = sell
+                _mep_history_loaded = True
+    except Exception as exc:
+        print(f"[BLUELYTICS] Error cargando MEP histórico: {exc}")
+
+    return _mep_history_cache
+
+
+def _get_mep_for_date(date_str: str, mep_history: dict[str, float]) -> float:
+    """
+    Devuelve el MEP de venta para una fecha dada.
+    Si no existe ese día exacto (feriado/fin de semana), busca el día anterior
+    más cercano dentro de los 7 días previos.
+    """
+    for delta in range(8):
+        try:
+            from datetime import date as _date, timedelta as _td
+            target = (_date.fromisoformat(date_str[:10]) - _td(days=delta)).isoformat()
+            if target in mep_history:
+                return mep_history[target]
+        except Exception:
+            break
+    return 0.0
+
+
 class PPIClient:
     def __init__(self) -> None:
         self._access_token: Optional[str] = None
@@ -167,6 +220,180 @@ class PPIClient:
             },
         )
         return data if isinstance(data, list) else data.get("movements", data.get("data", []))
+
+    async def compute_avg_costs(
+        self,
+        cached_state: dict | None = None,
+    ) -> tuple[dict[str, float], dict]:
+        """
+        Calcula precio promedio ponderado de compra con soporte incremental.
+
+        Primera vez (cached_state=None): fetcha 5 años de movimientos y construye
+        el estado completo. Tarda ~10-15 s.
+
+        Syncs siguientes (cached_state presente): fetcha solo desde
+        last_processed_date − 5 días (buffer para liquidaciones tardías).
+        Tarda ~1-2 s.
+
+        Returns:
+            avg_costs  : {ticker: precio_promedio_ars}
+            new_state  : documento a persistir en Firestore /users/{uid}/meta/avg_costs
+        """
+        import math
+        import statistics as _stats
+
+        now = datetime.now(timezone.utc)
+
+        # Cargar MEP histórico (en memoria si ya se descargó, sino fetch una vez)
+        mep_history = await _ensure_mep_history()
+
+        # Determinar ventana de fetch
+        if cached_state and cached_state.get("last_processed_date"):
+            raw_last = cached_state["last_processed_date"]
+            try:
+                last_dt = datetime.fromisoformat(raw_last.replace("Z", "+00:00"))
+            except Exception:
+                last_dt = now - timedelta(days=1825)
+            date_from  = last_dt - timedelta(days=5)  # buffer liquidaciones tardías
+            is_full    = False
+        else:
+            date_from  = now - timedelta(days=1825)   # 5 años
+            is_full    = True
+
+        # Fetch de movimientos en chunks
+        all_movements: list = []
+        chunk_start = date_from
+        while chunk_start < now:
+            chunk_end = min(now, chunk_start + timedelta(days=179))
+            try:
+                chunk = await self.get_movements(
+                    chunk_start.strftime("%Y-%m-%d"),
+                    chunk_end.strftime("%Y-%m-%d"),
+                )
+                all_movements.extend(chunk)
+            except Exception as exc:
+                print(f"[PPI] movimientos {chunk_start.date()}/{chunk_end.date()}: {exc}")
+            chunk_start = chunk_end + timedelta(days=1)
+
+        # Agrupar por ticker y ordenar cronológicamente
+        by_ticker: dict[str, list] = {}
+        latest_date = cached_state.get("last_processed_date", "") if cached_state else ""
+        for mov in all_movements:
+            ticker = mov.get("ticker", "")
+            if not ticker or ticker == "Ticker not found":
+                continue
+            qty    = abs(float(mov.get("quantity", 0)))
+            price  = float(mov.get("price", 0))
+            amount = float(mov.get("amount", 0))
+            if qty == 0 or price == 0:
+                continue
+            date_key = mov.get("settlementDate") or mov.get("date") or ""
+            if date_key > latest_date:
+                latest_date = date_key
+            by_ticker.setdefault(ticker, []).append(
+                {"qty": qty, "price": price, "amount": amount, "date": date_key}
+            )
+        for movs in by_ticker.values():
+            movs.sort(key=lambda m: m["date"])
+
+        def _fix_usd_amount(amount: float, qty: float, date_key: str, ref_price: float) -> float:
+            """
+            Si el monto de un movimiento está en USD (amount << precio de referencia),
+            convierte a ARS usando el MEP de bluelytics de ese día exacto.
+            Fallback: potencia de 10 más cercana al ratio (como antes).
+            """
+            if qty <= 0 or amount == 0 or ref_price <= 0:
+                return amount
+            unit_cost = abs(amount) / qty
+            if unit_cost <= 0:
+                return amount
+            ratio = ref_price / unit_cost
+            if ratio <= 50:
+                return amount  # no es outlier
+
+            # Outlier detectado: intentar con MEP histórico exacto
+            mep = _get_mep_for_date(date_key, mep_history)
+            if mep > 0:
+                return amount * mep
+            # Fallback a potencia de 10
+            power = round(math.log10(ratio))
+            return amount * (10 ** max(1, power))
+
+        if is_full:
+            # Calcular mediana por ticker para detectar outliers
+            for movs in by_ticker.values():
+                if len(movs) < 2:
+                    continue
+                eff = [abs(m["amount"]) / m["qty"] for m in movs if m["qty"] > 0 and m["amount"] != 0]
+                if len(eff) < 2:
+                    continue
+                median_p = _stats.median(eff)
+                for m in movs:
+                    if m["qty"] <= 0 or m["amount"] == 0:
+                        continue
+                    m["amount"] = _fix_usd_amount(m["amount"], m["qty"], m["date"], median_p)
+
+            # Promedio ponderado desde cero
+            acum: dict[str, dict] = {}
+            for ticker, movs in by_ticker.items():
+                acum[ticker] = {"qty": 0.0, "total_cost": 0.0}
+                for m in movs:
+                    if m["amount"] < 0:
+                        acum[ticker]["qty"]        += m["qty"]
+                        acum[ticker]["total_cost"] += abs(m["amount"])
+                    elif m["amount"] > 0 and acum[ticker]["qty"] > 0:
+                        avg = acum[ticker]["total_cost"] / acum[ticker]["qty"]
+                        acum[ticker]["qty"]        = max(0.0, acum[ticker]["qty"] - m["qty"])
+                        acum[ticker]["total_cost"] = acum[ticker]["qty"] * avg
+        else:
+            # Sync incremental: partir desde el estado cacheado
+            acum = {}
+            for ticker, state in (cached_state.get("tickers") or {}).items():
+                acum[ticker] = {
+                    "qty":        float(state.get("qty", 0)),
+                    "total_cost": float(state.get("total_cost", 0)),
+                }
+
+            for ticker, movs in by_ticker.items():
+                if ticker not in acum:
+                    acum[ticker] = {"qty": 0.0, "total_cost": 0.0}
+                cur_avg = (
+                    acum[ticker]["total_cost"] / acum[ticker]["qty"]
+                    if acum[ticker]["qty"] > 0 else 0.0
+                )
+                for m in movs:
+                    m["amount"] = _fix_usd_amount(m["amount"], m["qty"], m["date"], cur_avg)
+                    if m["amount"] < 0:
+                        acum[ticker]["qty"]        += m["qty"]
+                        acum[ticker]["total_cost"] += abs(m["amount"])
+                        if acum[ticker]["qty"] > 0:
+                            cur_avg = acum[ticker]["total_cost"] / acum[ticker]["qty"]
+                    elif m["amount"] > 0 and acum[ticker]["qty"] > 0:
+                        cur_avg = acum[ticker]["total_cost"] / acum[ticker]["qty"]
+                        acum[ticker]["qty"]        = max(0.0, acum[ticker]["qty"] - m["qty"])
+                        acum[ticker]["total_cost"] = acum[ticker]["qty"] * cur_avg
+
+        avg_costs = {
+            ticker: round(pos["total_cost"] / pos["qty"], 6)
+            for ticker, pos in acum.items()
+            if pos["qty"] > 0 and pos["total_cost"] > 0
+        }
+
+        new_state = {
+            "full_sync_completed": True,
+            "last_processed_date": latest_date,
+            "ultima_actualizacion": now.isoformat(),
+            "tickers": {
+                ticker: {
+                    "qty":        round(pos["qty"], 6),
+                    "total_cost": round(pos["total_cost"], 2),
+                }
+                for ticker, pos in acum.items()
+                if pos["qty"] > 0 and pos["total_cost"] > 0
+            },
+        }
+
+        return avg_costs, new_state
 
     async def get_average_costs(self) -> dict:
         """
