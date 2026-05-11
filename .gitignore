@@ -53,3 +53,6 @@ Thumbs.db
 
 # ── Claude Code (configuración local) ────────────────────────────────────────
 .claude/
+
+# ── Debug / sesiones temporales ──────────────────────────────────────────────
+debug/
