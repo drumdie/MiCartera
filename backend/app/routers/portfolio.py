@@ -449,6 +449,7 @@ async def debug_movements(ticker: str, request: Request):
     movs_corrected = []
     for m in movs_norm:
         mc = dict(m)
+        mc["amount_orig"] = m["amount"]
         if median_p > 0 and m["qty"] > 0 and m["amount"] != 0:
             unit_cost = abs(m["amount"]) / m["qty"]
             ratio = median_p / unit_cost if unit_cost > 0 else 0
@@ -478,7 +479,7 @@ async def debug_movements(ticker: str, request: Request):
             "tipo":        tipo,
             "qty":         mc["qty"],
             "price":       mc["price"],
-            "amount_orig": m["amount"] if (corr := mc.get("correccion")) else mc["amount"],
+            "amount_orig": mc["amount_orig"],
             "amount_used": mc["amount"],
             "qty_acum":    round(qty_acum, 4),
             "cost_acum":   round(cost_acum, 2),
