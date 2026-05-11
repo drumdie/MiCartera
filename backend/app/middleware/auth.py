@@ -5,6 +5,7 @@ from firebase_admin import auth as fb_auth
 
 # Rutas que no requieren autenticación
 PUBLIC_PATHS = {"/api/health", "/api/docs", "/openapi.json", "/api/portfolio/debug-costs"}
+_PUBLIC_PREFIXES = ("/api/portfolio/debug-movements/",)
 
 
 class FirebaseAuthMiddleware(BaseHTTPMiddleware):
@@ -13,7 +14,7 @@ class FirebaseAuthMiddleware(BaseHTTPMiddleware):
         if request.method == "OPTIONS":
             return await call_next(request)
 
-        if request.url.path in PUBLIC_PATHS:
+        if request.url.path in PUBLIC_PATHS or any(request.url.path.startswith(p) for p in _PUBLIC_PREFIXES):
             return await call_next(request)
 
         auth_header = request.headers.get("Authorization", "")

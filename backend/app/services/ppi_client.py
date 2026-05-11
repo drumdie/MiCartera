@@ -176,7 +176,7 @@ class PPIClient:
         Devuelve {ticker: precio_promedio_en_moneda_original}
         """
         date_to   = datetime.now(timezone.utc)
-        date_from = date_to - timedelta(days=1095)  # 3 años para cubrir el historial completo
+        date_from = date_to - timedelta(days=1825)  # 5 años para cubrir posiciones antiguas
 
         # Chunks de 180 días en orden cronológico
         all_movements: list = []

@@ -394,3 +394,82 @@ async def debug_costs(request: Request):
         "total_posiciones": len(comparacion),
         "posiciones":       comparacion,
     }
+
+
+@router.get("/debug-movements/{ticker}")
+async def debug_movements(ticker: str, request: Request):
+    """
+    Muestra todos los movimientos de un ticker en los últimos 5 años,
+    y el cálculo paso a paso del precio promedio de compra.
+    Útil para diagnosticar diferencias vs el broker.
+    """
+    from datetime import date, timedelta
+
+    date_to   = datetime.now(timezone.utc)
+    date_from = date_to - timedelta(days=1825)  # 5 años
+
+    all_movements: list = []
+    chunk_start = date_from
+    while chunk_start < date_to:
+        chunk_end = min(date_to, chunk_start + timedelta(days=179))
+        try:
+            chunk = await ppi_client.get_movements(
+                chunk_start.strftime("%Y-%m-%d"),
+                chunk_end.strftime("%Y-%m-%d"),
+            )
+            # Filtrar solo el ticker solicitado (o su versión truncada)
+            for mov in chunk:
+                t = mov.get("ticker", "")
+                if t.upper() == ticker.upper() or ticker.upper().startswith(t.upper()):
+                    all_movements.append(mov)
+        except Exception as exc:
+            all_movements.append({"error": str(exc), "chunk": chunk_start.strftime("%Y-%m-%d")})
+        chunk_start = chunk_end + timedelta(days=1)
+
+    # Replay del cálculo de promedio ponderado
+    qty_acum  = 0.0
+    cost_acum = 0.0
+    steps = []
+
+    for mov in all_movements:
+        t = mov.get("ticker", "")
+        if "error" in mov:
+            steps.append(mov)
+            continue
+        qty    = abs(float(mov.get("quantity", 0)))
+        price  = float(mov.get("price",    0))
+        amount = float(mov.get("amount",   0))
+        if qty == 0 or price == 0:
+            continue
+
+        tipo = "COMPRA" if amount < 0 else "VENTA"
+        if amount < 0:
+            qty_acum  += qty
+            cost_acum += abs(amount)
+        elif amount > 0 and qty_acum > 0:
+            avg_prev  = cost_acum / qty_acum
+            qty_acum  = max(0.0, qty_acum - qty)
+            cost_acum = qty_acum * avg_prev
+
+        avg_now = (cost_acum / qty_acum) if qty_acum > 0 else 0
+        steps.append({
+            "fecha":       mov.get("settlementDate", mov.get("date", "")),
+            "tipo":        tipo,
+            "qty":         qty,
+            "price":       price,
+            "amount":      amount,
+            "qty_acum":    round(qty_acum, 4),
+            "cost_acum":   round(cost_acum, 2),
+            "avg_precio":  round(avg_now, 2),
+            "descripcion": mov.get("description", ""),
+        })
+
+    avg_final = round(cost_acum / qty_acum, 2) if qty_acum > 0 else None
+    return {
+        "ticker":           ticker.upper(),
+        "ventana":          "5 años",
+        "total_movimientos": len([s for s in steps if "tipo" in s]),
+        "avg_costo_final":  avg_final,
+        "qty_final":        round(qty_acum, 4),
+        "pasos":            steps,
+    }
