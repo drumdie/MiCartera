@@ -124,15 +124,20 @@ export default function AssetRow({ position, expanded, onToggle, isCedear, isBon
             </div>
           )}
 
-          {/* Rendimiento histórico USD */}
-          {position.rend_usd_pct != null && (
-            <div>
-              <div className="tg-label">Rend. Histórico</div>
-              <div className={`tg-val ${position.rend_usd_pct >= 0 ? 'pos' : 'neg'}`}>
-                {formatPctShort(position.rend_usd_pct)}
+          {/* Rendimiento histórico: USD para instrumentos dolarizados, ARS para el resto */}
+          {(() => {
+            const isUsdInstrument = isCedear || isBono || isON
+            const rendHist = isUsdInstrument ? position.rend_usd_pct : position.rend_ars_pct
+            if (rendHist == null) return null
+            return (
+              <div>
+                <div className="tg-label">Rend. Histórico{isUsdInstrument ? ' USD' : ' ARS'}</div>
+                <div className={`tg-val ${rendHist >= 0 ? 'pos' : 'neg'}`}>
+                  {formatPctShort(rendHist)}
+                </div>
               </div>
-            </div>
-          )}
+            )
+          })()}
         </div>
 
         {position.tesis_corta && (

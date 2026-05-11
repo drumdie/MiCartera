@@ -287,11 +287,14 @@ async def sync_portfolio(request: Request):
     for item in items:
         cat = _normalize_categoria(item.get("Category", item.get("category", "")))
         ticker = item.get("ticker", item.get("Ticker", ""))
-        # FIX 2: El API de movimientos de PPI trunca tickers largos a 10 caracteres
-        # (ej: "SBS.ACCIONES.A" → "SBS.ACCION"). Buscar también con prefijo de 10 chars.
-        avg_cost = avg_costs.get(ticker) or avg_costs.get(ticker[:10])
-        if avg_cost is not None:
-            item = {**item, "averagePrice": avg_cost}
+        # Usar el AverageCost que PPI provee directamente en posiciones (coincide con el broker).
+        # Solo calcular desde movimientos si PPI no lo incluye en la respuesta.
+        # FIX 2: movimientos trunca tickers a 10 chars → buscar también con prefijo.
+        ppi_has_cost = bool(item.get("averagePrice") or item.get("AverageCost"))
+        if not ppi_has_cost:
+            avg_cost_calc = avg_costs.get(ticker) or avg_costs.get(ticker[:10])
+            if avg_cost_calc is not None:
+                item = {**item, "averagePrice": avg_cost_calc}
         grupos_raw[cat].append(item)
 
     # Obtener precios de apertura en paralelo para calcular rend_dia_pct

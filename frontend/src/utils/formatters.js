@@ -44,9 +44,10 @@ export function convertARS(amountARS, currency, cotizaciones) {
   }
 }
 
-// Retorna el rendimiento correcto según la moneda activa
+// Retorna el rendimiento correcto según la moneda activa.
+// Para instrumentos ARS, rend_usd_pct es 0 (no tenemos MEP histórico),
+// así que usamos rend_ars_pct como proxy en cualquier moneda.
 export function getRendForCurrency(position, currency) {
-  return currency === 'ARS' || currency === 'BNA'
-    ? position.rend_ars_pct
-    : position.rend_usd_pct
+  if (currency === 'ARS' || currency === 'BNA') return position.rend_ars_pct ?? 0
+  return position.rend_usd_pct || position.rend_ars_pct || 0
 }
