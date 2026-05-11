@@ -113,6 +113,20 @@ Seguimiento de fases y hitos del proyecto PWA de cartera de inversiones argentin
 - [ ] Pérdida de real-time onSnapshot, polling c/ 30-60s
 - **Tarea:** `mcp__ccd_session__spawn_task` — "Encrypt portfolio data at rest"
 
+### Seguridad — Hallazgos Audit Codex (2026-04-30)
+
+**🔴 HIGH**
+- [ ] `POST /api/prices/refresh` acepta cualquier usuario autenticado — restringir a admin claim o mover a scheduler-only (`prices.py`)
+- [ ] Detalles internos de PPI se propagan al cliente en errores — retornar mensaje genérico y loguear internamente (`portfolio.py:187`, `ppi_client.py:44,93`)
+
+**🟡 MEDIUM**
+- [ ] Cloud Function: auth PPI usa `ApiKey`/`ApiSecret` en JSON, el backend usa 4 credenciales en headers — alinear antes de que el scheduler empiece a escribir precios 0 (`functions/main.py:51`)
+- [ ] `usePortfolio.js` inicializa `stressTest` con `MOCK_STRESS_TEST` — mostrar estado vacío/error para usuarios reales autenticados (`usePortfolio.js:94`)
+- [ ] Refresh de cotizaciones puede escribir 0 si todas las fuentes fallan — validar que los valores sean > 0 antes de persistir (parcialmente mitigado con `_NUMERIC_FIELDS`, revisar edge cases)
+
+**🟢 LOW**
+- [ ] Agregar config de ESLint al frontend — `npm run lint` falla por falta de archivo de configuración
+
 ### Optimizaciones Futuras
 - [ ] Rate limiting en endpoints públicos
 - [ ] Caché distribuido (Redis) si llega a escala
@@ -139,6 +153,7 @@ Seguimiento de fases y hitos del proyecto PWA de cartera de inversiones argentin
 | **Display** | ✅ | Cartera funcional con toggles |
 | **Cotizaciones** | ✅ | Mercado actualizado c/ fallbacks |
 | **Privacidad** | ✅ | Rules + Privacy toggle |
+| **Seguridad (audit)** | 🔧 | 2 HIGH + 3 MEDIUM pendientes (ver Tareas Transversales) |
 | **Encriptación** | ⏳ | Planeado post-Fase 1 |
 | **Fundamentals** | ⏳ | Fase 2 |
 | **Stress Testing** | ⏳ | Fase 2 |
