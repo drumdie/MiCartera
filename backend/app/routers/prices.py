@@ -124,10 +124,25 @@ async def refresh_cotizaciones(request: Request):
     """
     Fuerza un polling inmediato de cotizaciones (solo admin o usuarios autenticados).
     Escribe en /market/cotizaciones y devuelve los valores frescos.
+
+    Si alguna fuente no responde (ej: mercado cerrado en fin de semana),
+    preserva el último valor conocido de Firestore en lugar de escribir 0.
+    Así el MEP del viernes permanece hasta que vuelva a abrirse el mercado.
     """
+    db = firestore.client()
+    ref = db.collection("market").document("cotizaciones")
+
+    # Leer valores previos como fallback antes de actualizar
+    existing_snap = ref.get()
+    existing = existing_snap.to_dict() if existing_snap.exists else {}
+
     data = await _build_cotizaciones()
 
-    db = firestore.client()
-    db.collection("market").document("cotizaciones").set(data)
+    # Para cada campo numérico: si la fuente devolvió 0, preservar el último valor conocido
+    _NUMERIC_FIELDS = ["dolar_mep", "dolar_ccl", "dolar_bna", "dolar_oficial", "riesgo_pais_pb"]
+    for field in _NUMERIC_FIELDS:
+        if not data.get(field) and existing.get(field):
+            data[field] = existing[field]
 
+    ref.set(data)
     return {"status": "ok", "cotizaciones": data}
