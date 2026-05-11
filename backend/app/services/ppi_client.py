@@ -74,6 +74,31 @@ def _get_mep_for_date(date_str: str, mep_history: dict[str, float]) -> float:
     return 0.0
 
 
+def _ars_unit_price(
+    price: float,
+    date_key: str,
+    ref_price: float,
+    mep_history: dict[str, float],
+) -> float:
+    """
+    Retorna el precio unitario en ARS.
+    Si el precio viene en USD (price << ref_price por factor >50x),
+    lo convierte usando el MEP histórico exacto del día.
+    Fallback: potencia de 10 más cercana al ratio.
+    """
+    import math as _math
+    if price <= 0 or ref_price <= 0:
+        return price
+    ratio = ref_price / price
+    if ratio <= 50:
+        return price                        # ya está en ARS
+    mep = _get_mep_for_date(date_key, mep_history)
+    if mep > 0:
+        return price * mep                  # conversión exacta con MEP histórico
+    power = round(_math.log10(ratio))
+    return price * (10 ** max(1, power))    # fallback ×10^n
+
+
 class PPIClient:
     def __init__(self) -> None:
         self._access_token: Optional[str] = None
@@ -296,52 +321,25 @@ class PPIClient:
         for movs in by_ticker.values():
             movs.sort(key=lambda m: m["date"])
 
-        def _fix_usd_amount(amount: float, qty: float, date_key: str, ref_price: float) -> float:
-            """
-            Si el monto de un movimiento está en USD (amount << precio de referencia),
-            convierte a ARS usando el MEP de bluelytics de ese día exacto.
-            Fallback: potencia de 10 más cercana al ratio (como antes).
-            """
-            if qty <= 0 or amount == 0 or ref_price <= 0:
-                return amount
-            unit_cost = abs(amount) / qty
-            if unit_cost <= 0:
-                return amount
-            ratio = ref_price / unit_cost
-            if ratio <= 50:
-                return amount  # no es outlier
-
-            # Outlier detectado: intentar con MEP histórico exacto
-            mep = _get_mep_for_date(date_key, mep_history)
-            if mep > 0:
-                return amount * mep
-            # Fallback a potencia de 10
-            power = round(math.log10(ratio))
-            return amount * (10 ** max(1, power))
-
         if is_full:
-            # Calcular mediana por ticker para detectar outliers
-            for movs in by_ticker.values():
-                if len(movs) < 2:
-                    continue
-                eff = [abs(m["amount"]) / m["qty"] for m in movs if m["qty"] > 0 and m["amount"] != 0]
-                if len(eff) < 2:
-                    continue
-                median_p = _stats.median(eff)
-                for m in movs:
-                    if m["qty"] <= 0 or m["amount"] == 0:
-                        continue
-                    m["amount"] = _fix_usd_amount(m["amount"], m["qty"], m["date"], median_p)
+            # Calcular mediana de precios por ticker para detectar outliers USD
+            medians: dict[str, float] = {}
+            for ticker, movs in by_ticker.items():
+                prices = [m["price"] for m in movs if m["price"] > 0]
+                if len(prices) >= 2:
+                    medians[ticker] = _stats.median(prices)
 
-            # Promedio ponderado desde cero
+            # Promedio ponderado desde cero usando precio de ejecución (sin comisiones)
             acum: dict[str, dict] = {}
             for ticker, movs in by_ticker.items():
                 acum[ticker] = {"qty": 0.0, "total_cost": 0.0}
+                ref = medians.get(ticker, 0.0)
                 for m in movs:
-                    if m["amount"] < 0:
+                    unit_price = _ars_unit_price(m["price"], m["date"], ref, mep_history)
+                    if m["amount"] < 0:                          # compra
                         acum[ticker]["qty"]        += m["qty"]
-                        acum[ticker]["total_cost"] += abs(m["amount"])
-                    elif m["amount"] > 0 and acum[ticker]["qty"] > 0:
+                        acum[ticker]["total_cost"] += m["qty"] * unit_price
+                    elif m["amount"] > 0 and acum[ticker]["qty"] > 0:  # venta
                         avg = acum[ticker]["total_cost"] / acum[ticker]["qty"]
                         acum[ticker]["qty"]        = max(0.0, acum[ticker]["qty"] - m["qty"])
                         acum[ticker]["total_cost"] = acum[ticker]["qty"] * avg
@@ -362,13 +360,13 @@ class PPIClient:
                     if acum[ticker]["qty"] > 0 else 0.0
                 )
                 for m in movs:
-                    m["amount"] = _fix_usd_amount(m["amount"], m["qty"], m["date"], cur_avg)
-                    if m["amount"] < 0:
+                    unit_price = _ars_unit_price(m["price"], m["date"], cur_avg, mep_history)
+                    if m["amount"] < 0:                          # compra
                         acum[ticker]["qty"]        += m["qty"]
-                        acum[ticker]["total_cost"] += abs(m["amount"])
+                        acum[ticker]["total_cost"] += m["qty"] * unit_price
                         if acum[ticker]["qty"] > 0:
                             cur_avg = acum[ticker]["total_cost"] / acum[ticker]["qty"]
-                    elif m["amount"] > 0 and acum[ticker]["qty"] > 0:
+                    elif m["amount"] > 0 and acum[ticker]["qty"] > 0:  # venta
                         cur_avg = acum[ticker]["total_cost"] / acum[ticker]["qty"]
                         acum[ticker]["qty"]        = max(0.0, acum[ticker]["qty"] - m["qty"])
                         acum[ticker]["total_cost"] = acum[ticker]["qty"] * cur_avg
@@ -396,96 +394,9 @@ class PPIClient:
         return avg_costs, new_state
 
     async def get_average_costs(self) -> dict:
-        """
-        Calcula el precio promedio ponderado de compra por ticker.
-        Ventana: 5 años en chunks de 180 días.
-
-        Corrección de moneda: PPI liquida en ARS o en USD MEP.
-        Cuando un movimiento fue en USD, el campo `amount` viene en USD
-        mientras que el resto del ticker está en ARS — el monto por unidad
-        queda 1000x más chico que la mediana.
-        Se detecta como outlier (ratio > 50x vs mediana) y se escala por la
-        potencia de 10 más cercana para normalizar a ARS.
-        """
-        import math
-        import statistics as _stats
-
-        date_to   = datetime.now(timezone.utc)
-        date_from = date_to - timedelta(days=1825)  # 5 años para cubrir posiciones antiguas
-
-        all_movements: list = []
-        chunk_start = date_from
-        while chunk_start < date_to:
-            chunk_end = min(date_to, chunk_start + timedelta(days=179))
-            try:
-                chunk = await self.get_movements(
-                    chunk_start.strftime("%Y-%m-%d"),
-                    chunk_end.strftime("%Y-%m-%d"),
-                )
-                all_movements.extend(chunk)
-            except Exception as exc:
-                print(f"[PPI] movimientos {chunk_start.date()}/{chunk_end.date()}: {exc}")
-            chunk_start = chunk_end + timedelta(days=1)
-
-        # --- Paso 1: agrupar por ticker y normalizar ---
-        by_ticker: dict[str, list] = {}
-        for mov in all_movements:
-            ticker = mov.get("ticker", "")
-            if not ticker or ticker == "Ticker not found":
-                continue
-            qty    = abs(float(mov.get("quantity", 0)))
-            price  = float(mov.get("price",    0))
-            amount = float(mov.get("amount",   0))
-            if qty == 0 or price == 0:
-                continue
-            date_key = mov.get("settlementDate") or mov.get("date") or ""
-            by_ticker.setdefault(ticker, []).append(
-                {"qty": qty, "price": price, "amount": amount, "date": date_key}
-            )
-
-        # Orden cronológico dentro de cada ticker
-        for movs in by_ticker.values():
-            movs.sort(key=lambda m: m["date"])
-
-        # --- Paso 2: corregir outliers de moneda ---
-        for movs in by_ticker.values():
-            if len(movs) < 2:
-                continue
-            eff = [abs(m["amount"]) / m["qty"] for m in movs if m["qty"] > 0 and m["amount"] != 0]
-            if len(eff) < 2:
-                continue
-            median_p = _stats.median(eff)
-            if median_p <= 0:
-                continue
-            for m in movs:
-                if m["qty"] <= 0 or m["amount"] == 0:
-                    continue
-                unit_cost = abs(m["amount"]) / m["qty"]
-                if unit_cost <= 0:
-                    continue
-                ratio = median_p / unit_cost
-                if ratio > 50:  # probable liquidación en USD cuando el resto es ARS
-                    power = round(math.log10(ratio))
-                    m["amount"] = m["amount"] * (10 ** max(1, power))
-
-        # --- Paso 3: promedio ponderado móvil ---
-        acum: dict[str, dict] = {}
-        for ticker, movs in by_ticker.items():
-            acum[ticker] = {"qty": 0.0, "cost": 0.0}
-            for m in movs:
-                if m["amount"] < 0:  # compra
-                    acum[ticker]["qty"]  += m["qty"]
-                    acum[ticker]["cost"] += abs(m["amount"])
-                elif m["amount"] > 0 and acum[ticker]["qty"] > 0:  # venta
-                    avg = acum[ticker]["cost"] / acum[ticker]["qty"]
-                    acum[ticker]["qty"]  = max(0.0, acum[ticker]["qty"] - m["qty"])
-                    acum[ticker]["cost"] = acum[ticker]["qty"] * avg
-
-        return {
-            ticker: round(pos["cost"] / pos["qty"], 6)
-            for ticker, pos in acum.items()
-            if pos["qty"] > 0 and pos["cost"] > 0
-        }
+        """Versión legacy usada por los endpoints de debug. Delega a compute_avg_costs."""
+        avg_costs, _ = await self.compute_avg_costs(cached_state=None)
+        return avg_costs
 
     # ------------------------------------------------------------------
     # Cotizaciones de mercado
