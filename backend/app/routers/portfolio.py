@@ -329,3 +329,73 @@ async def sync_portfolio(request: Request):
         "total_posiciones": sum(len(v) for v in grupos.values()),
         "timestamp": now,
     }
+
+
+@router.get("/debug-costs")
+async def debug_costs(request: Request):
+    """
+    Endpoint de diagnóstico: muestra avg_costs calculados desde movimientos PPI
+    y una muestra de los movimientos crudos para verificar signos y campos.
+    NO escribe en Firestore. Solo para debugging.
+    """
+    from datetime import timedelta
+
+    # Traer posiciones actuales para comparar tickers
+    try:
+        items = await ppi_client.get_account_positions()
+    except Exception as exc:
+        items = []
+        positions_error = str(exc)
+    else:
+        positions_error = None
+
+    tickers_actuales = list({
+        item.get("ticker", item.get("Ticker", ""))
+        for item in items
+        if item.get("ticker", item.get("Ticker", ""))
+    })
+
+    # Traer muestra de movimientos recientes (últimos 30 días) para ver estructura
+    from datetime import date
+    date_to   = date.today()
+    date_from = date_to - timedelta(days=30)
+    try:
+        muestra_movs = await ppi_client.get_movements(
+            date_from.strftime("%Y-%m-%d"),
+            date_to.strftime("%Y-%m-%d"),
+        )
+    except Exception as exc:
+        muestra_movs = []
+        movs_error = str(exc)
+    else:
+        movs_error = None
+
+    # Calcular avg_costs completo
+    try:
+        avg_costs = await ppi_client.get_average_costs()
+    except Exception as exc:
+        avg_costs = {}
+        avg_costs_error = str(exc)
+    else:
+        avg_costs_error = None
+
+    # Cruzar: qué tickers tienen avg_cost y cuáles no
+    con_costo    = {t: avg_costs[t] for t in tickers_actuales if t in avg_costs}
+    sin_costo    = [t for t in tickers_actuales if t not in avg_costs]
+
+    return {
+        "tickers_en_cartera":   tickers_actuales,
+        "avg_costs_calculados": avg_costs,
+        "con_costo_promedio":   con_costo,
+        "sin_costo_promedio":   sin_costo,
+        "total_avg_costs":      len(avg_costs),
+        "muestra_movimientos_30d": muestra_movs[:20],  # primeros 20
+        "total_movimientos_30d":   len(muestra_movs),
+        "errors": {
+            k: v for k, v in {
+                "positions": positions_error,
+                "movimientos": movs_error,
+                "avg_costs": avg_costs_error,
+            }.items() if v
+        },
+    }
