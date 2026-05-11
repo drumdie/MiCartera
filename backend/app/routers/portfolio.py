@@ -97,24 +97,34 @@ def _transform_position(
     costo_prom  = float(item.get("averagePrice", item.get("AverageCost", 0)))
 
     currency = item.get("currency", item.get("Currency", "Pesos"))
+    is_usd   = "olar" in currency.lower()
+
+    # FIX 1: PPI devuelve Price=0 cuando el mercado está cerrado (fin de semana),
+    # pero sí devuelve MarketValue correcto. Derivar precio desde valor/cantidad.
+    if precio == 0 and valor > 0 and cantidad > 0:
+        precio = round(valor / cantidad, 6)
 
     # Guardar valores pre-conversión para calcular rendimientos en moneda original
     precio_orig     = precio
     costo_prom_orig = costo_prom
 
-    if "olar" in currency.lower() and dolar_mep > 0:
+    if is_usd and dolar_mep > 0:
         precio     = round(precio     * dolar_mep, 2)
         valor      = round(valor      * dolar_mep, 2)
         costo_prom = round(costo_prom * dolar_mep, 2)
 
-    # Rendimiento histórico vs costo promedio de compra
-    # is_usd: precio_orig y costo_prom_orig están en USD → rend_usd_pct es el correcto
-    # is_ars: están en ARS → rend_ars_pct es el correcto; rend_usd_pct requeriría MEP histórico
-    is_usd = "olar" in currency.lower()
+    # Rendimiento histórico vs costo promedio de compra.
+    # FIX 3: Para instrumentos USD, el avg_cost calculado desde movimientos puede
+    # estar en ARS (PPI registra el monto en pesos). Si costo_prom_orig es mucho
+    # mayor que precio_orig, asumimos que está en ARS y lo convertimos a USD.
     rend_ars_pct = 0.0
     rend_usd_pct = 0.0
     if costo_prom_orig > 0 and precio_orig > 0:
-        rend_orig = round((precio_orig - costo_prom_orig) / costo_prom_orig * 100, 2)
+        costo_para_rend = costo_prom_orig
+        if is_usd and dolar_mep > 0 and costo_prom_orig > precio_orig * 10:
+            # costo_prom_orig está en ARS → convertir a USD para comparar con precio_orig
+            costo_para_rend = costo_prom_orig / dolar_mep
+        rend_orig = round((precio_orig - costo_para_rend) / costo_para_rend * 100, 2)
         if is_usd:
             rend_usd_pct = rend_orig
             rend_ars_pct = rend_orig  # proxy: no incluye variación del MEP durante la tenencia
@@ -277,7 +287,9 @@ async def sync_portfolio(request: Request):
     for item in items:
         cat = _normalize_categoria(item.get("Category", item.get("category", "")))
         ticker = item.get("ticker", item.get("Ticker", ""))
-        avg_cost = avg_costs.get(ticker)
+        # FIX 2: El API de movimientos de PPI trunca tickers largos a 10 caracteres
+        # (ej: "SBS.ACCIONES.A" → "SBS.ACCION"). Buscar también con prefijo de 10 chars.
+        avg_cost = avg_costs.get(ticker) or avg_costs.get(ticker[:10])
         if avg_cost is not None:
             item = {**item, "averagePrice": avg_cost}
         grupos_raw[cat].append(item)
