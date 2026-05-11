@@ -19,6 +19,7 @@ from fastapi import APIRouter, HTTPException, Request
 from firebase_admin import firestore
 
 from app.models.market import Cotizaciones
+from app.services.ppi_client import ppi_client
 
 router = APIRouter(prefix="/api/prices", tags=["prices"])
 
@@ -72,11 +73,18 @@ async def _fetch_dolarapi(slug: str) -> float:
 
 async def _build_cotizaciones() -> dict:
     """Obtiene todas las cotizaciones y construye el documento para Firestore."""
-    # dolarapi.com → MEP y CCL (promedio compra/venta)
-    mep, ccl = await asyncio.gather(
-        _fetch_dolarapi("bolsa"),
-        _fetch_dolarapi("contadoconliqui"),
-    )
+    # MEP: PPI (AL30÷AL30D) es el tipo de cambio real con el que opera el usuario.
+    # dolarapi.com como fallback para fines de semana / mercado cerrado.
+    mep = 0.0
+    try:
+        mep = await ppi_client.get_dolar_mep()
+    except Exception:
+        pass
+    if mep <= 0:
+        mep = await _fetch_dolarapi("bolsa")
+
+    # CCL: dolarapi.com (GD30/GD30D no siempre está disponible en PPI)
+    ccl = await _fetch_dolarapi("contadoconliqui")
 
     # BCRA → BNA, Oficial y Riesgo País (APIs públicas, sin credenciales)
     bna        = await _fetch_bcra_variable(_VAR_DOLAR_BNA)

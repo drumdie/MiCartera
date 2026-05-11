@@ -1,14 +1,20 @@
 import { useState } from 'react'
 import { useCurrency } from '../../hooks/useCurrency'
-import { formatARS, formatARSPrice, formatPctShort } from '../../utils/formatters'
+import { formatARS, formatARSPrice, formatUSD, formatPctShort } from '../../utils/formatters'
 import PrivacyMask from '../ui/PrivacyMask'
 import TacticalBadge, { tacticalBarClass } from './TacticalBadge'
 
 export default function AssetRow({ position, expanded, onToggle, isCedear, isBono, isON, isFCI }) {
-  const { activeCurrency, getRend, cotizaciones } = useCurrency()
-  const rend   = getRend(position)
-  const isPos  = rend >= 0
-  const barCls = tacticalBarClass(position.accion_tactica)
+  const { activeCurrency, getRend, convert, convertPrice, curLabel } = useCurrency()
+  const rend      = getRend(position)
+  const isPos     = rend >= 0
+  const barCls    = tacticalBarClass(position.accion_tactica)
+  const isMEPmode = activeCurrency === 'MEP' || activeCurrency === 'CCL'
+
+  // Ganancia/pérdida absoluta en la moneda activa
+  const ganancia = isMEPmode
+    ? (position.ganancia_usd_mep != null ? formatUSD(position.ganancia_usd_mep) : null)
+    : (position.ganancia_ars     != null ? formatARS(position.ganancia_ars)     : null)
 
   return (
     <div className={`ticker-row ${expanded ? 'expanded' : ''}`} onClick={onToggle}>
@@ -42,25 +48,19 @@ export default function AssetRow({ position, expanded, onToggle, isCedear, isBon
             </div>
           </div>
 
-          {/* Precio de compra — acciones y CEDEARs */}
-          {position.precio_compra_usd != null && (
-            <div>
-              <div className="tg-label">P. Compra USD</div>
-              <div className="tg-val"><PrivacyMask>${position.precio_compra_usd.toLocaleString('es-AR')}</PrivacyMask></div>
-            </div>
-          )}
+          {/* Precio de compra */}
           {position.precio_compra_ars != null && (
             <div>
-              <div className="tg-label">P. Compra ARS</div>
-              <div className="tg-val"><PrivacyMask>{formatARSPrice(position.precio_compra_ars)}</PrivacyMask></div>
+              <div className="tg-label">P. Compra {curLabel}</div>
+              <div className="tg-val"><PrivacyMask>{convertPrice(position.precio_compra_ars)}</PrivacyMask></div>
             </div>
           )}
 
-          {/* Precio actual ARS */}
+          {/* Precio actual */}
           {position.precio_actual_ars != null && (
             <div>
-              <div className="tg-label">P. Actual ARS</div>
-              <div className="tg-val"><PrivacyMask>{formatARSPrice(position.precio_actual_ars)}</PrivacyMask></div>
+              <div className="tg-label">P. Actual {curLabel}</div>
+              <div className="tg-val"><PrivacyMask>{convertPrice(position.precio_actual_ars)}</PrivacyMask></div>
             </div>
           )}
 
@@ -106,11 +106,21 @@ export default function AssetRow({ position, expanded, onToggle, isCedear, isBon
             </div>
           )}
 
-          {/* Valor corriente ARS */}
+          {/* Valor corriente */}
           {position.valor_corriente_ars != null && (
             <div>
-              <div className="tg-label">Valor ARS</div>
-              <div className="tg-val"><PrivacyMask>{formatARS(position.valor_corriente_ars)}</PrivacyMask></div>
+              <div className="tg-label">Valor {curLabel}</div>
+              <div className="tg-val"><PrivacyMask>{convert(position.valor_corriente_ars)}</PrivacyMask></div>
+            </div>
+          )}
+
+          {/* Ganancia / Pérdida absoluta */}
+          {ganancia && (
+            <div>
+              <div className="tg-label">Ganancia {curLabel}</div>
+              <div className={`tg-val ${(isMEPmode ? position.ganancia_usd_mep : position.ganancia_ars) >= 0 ? 'pos' : 'neg'}`}>
+                <PrivacyMask>{ganancia}</PrivacyMask>
+              </div>
             </div>
           )}
 

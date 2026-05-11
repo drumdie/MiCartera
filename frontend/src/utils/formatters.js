@@ -33,7 +33,7 @@ export function formatPctShort(pct) {
   return sign + pct.toFixed(2).replace('.', ',') + '%'
 }
 
-// Formatea un valor en ARS a la moneda activa del contexto
+// Formatea un valor en ARS a la moneda activa del contexto (para totales)
 export function convertARS(amountARS, currency, cotizaciones) {
   switch (currency) {
     case 'ARS': return formatARS(amountARS)
@@ -42,6 +42,21 @@ export function convertARS(amountARS, currency, cotizaciones) {
     case 'BNA': return formatARS(amountARS)
     default:    return formatARS(amountARS)
   }
+}
+
+// Igual que convertARS pero conserva decimales — para precios por unidad
+export function convertARSPrice(amountARS, currency, cotizaciones) {
+  if (amountARS == null || isNaN(amountARS)) return '—'
+  switch (currency) {
+    case 'MEP': return formatUSD(amountARS / cotizaciones.dolar_mep)
+    case 'CCL': return formatUSD(amountARS / cotizaciones.dolar_ccl)
+    default:    return formatARSPrice(amountARS)
+  }
+}
+
+// Label de moneda activa para columnas dinámicas
+export function currencyLabel(currency) {
+  return currency === 'MEP' ? 'MEP' : currency === 'CCL' ? 'CCL' : 'ARS'
 }
 
 // Retorna el rendimiento correcto según la moneda activa.
