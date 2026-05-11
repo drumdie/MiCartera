@@ -170,15 +170,22 @@ class PPIClient:
 
     async def get_average_costs(self) -> dict:
         """
-        Calcula el precio promedio ponderado de compra por ticker
-        usando el historial de movimientos de los últimos 2 años.
-        Fetchea en chunks de 180 días para evitar el límite de registros de PPI.
-        Devuelve {ticker: precio_promedio_en_moneda_original}
+        Calcula el precio promedio ponderado de compra por ticker.
+        Ventana: 5 años en chunks de 180 días.
+
+        Corrección de moneda: PPI liquida en ARS o en USD MEP.
+        Cuando un movimiento fue en USD, el campo `amount` viene en USD
+        mientras que el resto del ticker está en ARS — el monto por unidad
+        queda 1000x más chico que la mediana.
+        Se detecta como outlier (ratio > 50x vs mediana) y se escala por la
+        potencia de 10 más cercana para normalizar a ARS.
         """
+        import math
+        import statistics as _stats
+
         date_to   = datetime.now(timezone.utc)
         date_from = date_to - timedelta(days=1825)  # 5 años para cubrir posiciones antiguas
 
-        # Chunks de 180 días en orden cronológico
         all_movements: list = []
         chunk_start = date_from
         while chunk_start < date_to:
@@ -193,10 +200,8 @@ class PPIClient:
                 print(f"[PPI] movimientos {chunk_start.date()}/{chunk_end.date()}: {exc}")
             chunk_start = chunk_end + timedelta(days=1)
 
-        # Promedio ponderado móvil:
-        # amount < 0 → compra; amount > 0 → venta
-        acum: dict = {}  # {ticker: {"qty": float, "cost": float}}
-
+        # --- Paso 1: agrupar por ticker y normalizar ---
+        by_ticker: dict[str, list] = {}
         for mov in all_movements:
             ticker = mov.get("ticker", "")
             if not ticker or ticker == "Ticker not found":
@@ -206,17 +211,48 @@ class PPIClient:
             amount = float(mov.get("amount",   0))
             if qty == 0 or price == 0:
                 continue
+            date_key = mov.get("settlementDate") or mov.get("date") or ""
+            by_ticker.setdefault(ticker, []).append(
+                {"qty": qty, "price": price, "amount": amount, "date": date_key}
+            )
 
-            if ticker not in acum:
-                acum[ticker] = {"qty": 0.0, "cost": 0.0}
+        # Orden cronológico dentro de cada ticker
+        for movs in by_ticker.values():
+            movs.sort(key=lambda m: m["date"])
 
-            if amount < 0:  # compra — desembolso real incluye comisiones
-                acum[ticker]["qty"]  += qty
-                acum[ticker]["cost"] += abs(amount)
-            elif amount > 0 and acum[ticker]["qty"] > 0:  # venta
-                avg = acum[ticker]["cost"] / acum[ticker]["qty"]
-                acum[ticker]["qty"]  = max(0.0, acum[ticker]["qty"] - qty)
-                acum[ticker]["cost"] = acum[ticker]["qty"] * avg
+        # --- Paso 2: corregir outliers de moneda ---
+        for movs in by_ticker.values():
+            if len(movs) < 2:
+                continue
+            eff = [abs(m["amount"]) / m["qty"] for m in movs if m["qty"] > 0 and m["amount"] != 0]
+            if len(eff) < 2:
+                continue
+            median_p = _stats.median(eff)
+            if median_p <= 0:
+                continue
+            for m in movs:
+                if m["qty"] <= 0 or m["amount"] == 0:
+                    continue
+                unit_cost = abs(m["amount"]) / m["qty"]
+                if unit_cost <= 0:
+                    continue
+                ratio = median_p / unit_cost
+                if ratio > 50:  # probable liquidación en USD cuando el resto es ARS
+                    power = round(math.log10(ratio))
+                    m["amount"] = m["amount"] * (10 ** max(1, power))
+
+        # --- Paso 3: promedio ponderado móvil ---
+        acum: dict[str, dict] = {}
+        for ticker, movs in by_ticker.items():
+            acum[ticker] = {"qty": 0.0, "cost": 0.0}
+            for m in movs:
+                if m["amount"] < 0:  # compra
+                    acum[ticker]["qty"]  += m["qty"]
+                    acum[ticker]["cost"] += abs(m["amount"])
+                elif m["amount"] > 0 and acum[ticker]["qty"] > 0:  # venta
+                    avg = acum[ticker]["cost"] / acum[ticker]["qty"]
+                    acum[ticker]["qty"]  = max(0.0, acum[ticker]["qty"] - m["qty"])
+                    acum[ticker]["cost"] = acum[ticker]["qty"] * avg
 
         return {
             ticker: round(pos["cost"] / pos["qty"], 6)

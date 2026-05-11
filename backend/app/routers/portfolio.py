@@ -400,15 +400,17 @@ async def debug_costs(request: Request):
 async def debug_movements(ticker: str, request: Request):
     """
     Muestra todos los movimientos de un ticker en los últimos 5 años,
-    y el cálculo paso a paso del precio promedio de compra.
+    el cálculo sin corrección y el cálculo con corrección de moneda.
     Útil para diagnosticar diferencias vs el broker.
     """
-    from datetime import date, timedelta
+    import math
+    import statistics as _stats
+    from datetime import timedelta
 
     date_to   = datetime.now(timezone.utc)
-    date_from = date_to - timedelta(days=1825)  # 5 años
+    date_from = date_to - timedelta(days=1825)
 
-    all_movements: list = []
+    raw_movs: list = []
     chunk_start = date_from
     while chunk_start < date_to:
         chunk_end = min(date_to, chunk_start + timedelta(days=179))
@@ -417,59 +419,84 @@ async def debug_movements(ticker: str, request: Request):
                 chunk_start.strftime("%Y-%m-%d"),
                 chunk_end.strftime("%Y-%m-%d"),
             )
-            # Filtrar solo el ticker solicitado (o su versión truncada)
             for mov in chunk:
                 t = mov.get("ticker", "")
                 if t.upper() == ticker.upper() or ticker.upper().startswith(t.upper()):
-                    all_movements.append(mov)
+                    raw_movs.append(mov)
         except Exception as exc:
-            all_movements.append({"error": str(exc), "chunk": chunk_start.strftime("%Y-%m-%d")})
+            raw_movs.append({"error": str(exc)})
         chunk_start = chunk_end + timedelta(days=1)
 
-    # Replay del cálculo de promedio ponderado
-    qty_acum  = 0.0
-    cost_acum = 0.0
-    steps = []
-
-    for mov in all_movements:
-        t = mov.get("ticker", "")
+    # Normalizar y ordenar
+    movs_norm = []
+    for mov in raw_movs:
         if "error" in mov:
-            steps.append(mov)
             continue
         qty    = abs(float(mov.get("quantity", 0)))
         price  = float(mov.get("price",    0))
         amount = float(mov.get("amount",   0))
         if qty == 0 or price == 0:
             continue
+        date_key = mov.get("settlementDate") or mov.get("date") or ""
+        movs_norm.append({"qty": qty, "price": price, "amount": amount,
+                          "date": date_key, "desc": mov.get("description", "")})
+    movs_norm.sort(key=lambda m: m["date"])
 
-        tipo = "COMPRA" if amount < 0 else "VENTA"
-        if amount < 0:
-            qty_acum  += qty
-            cost_acum += abs(amount)
-        elif amount > 0 and qty_acum > 0:
+    # Corrección de moneda
+    eff = [abs(m["amount"]) / m["qty"] for m in movs_norm if m["qty"] > 0 and m["amount"] != 0]
+    median_p = _stats.median(eff) if len(eff) >= 2 else 0
+    corrections = []
+    movs_corrected = []
+    for m in movs_norm:
+        mc = dict(m)
+        if median_p > 0 and m["qty"] > 0 and m["amount"] != 0:
+            unit_cost = abs(m["amount"]) / m["qty"]
+            ratio = median_p / unit_cost if unit_cost > 0 else 0
+            if ratio > 50:
+                power = round(math.log10(ratio))
+                scale = 10 ** max(1, power)
+                mc["amount"] = m["amount"] * scale
+                mc["correccion"] = f"×{scale} (ratio {ratio:.0f}x vs mediana {median_p:.0f})"
+                corrections.append(mc["correccion"])
+        movs_corrected.append(mc)
+
+    # Replay con corrección
+    steps = []
+    qty_acum = cost_acum = 0.0
+    for mc in movs_corrected:
+        tipo = "COMPRA" if mc["amount"] < 0 else "VENTA"
+        if mc["amount"] < 0:
+            qty_acum  += mc["qty"]
+            cost_acum += abs(mc["amount"])
+        elif mc["amount"] > 0 and qty_acum > 0:
             avg_prev  = cost_acum / qty_acum
-            qty_acum  = max(0.0, qty_acum - qty)
+            qty_acum  = max(0.0, qty_acum - mc["qty"])
             cost_acum = qty_acum * avg_prev
-
         avg_now = (cost_acum / qty_acum) if qty_acum > 0 else 0
-        steps.append({
-            "fecha":       mov.get("settlementDate", mov.get("date", "")),
+        step = {
+            "fecha":       mc["date"],
             "tipo":        tipo,
-            "qty":         qty,
-            "price":       price,
-            "amount":      amount,
+            "qty":         mc["qty"],
+            "price":       mc["price"],
+            "amount_orig": m["amount"] if (corr := mc.get("correccion")) else mc["amount"],
+            "amount_used": mc["amount"],
             "qty_acum":    round(qty_acum, 4),
             "cost_acum":   round(cost_acum, 2),
             "avg_precio":  round(avg_now, 2),
-            "descripcion": mov.get("description", ""),
-        })
+            "descripcion": mc["desc"],
+        }
+        if mc.get("correccion"):
+            step["correccion_moneda"] = mc["correccion"]
+        steps.append(step)
 
     avg_final = round(cost_acum / qty_acum, 2) if qty_acum > 0 else None
     return {
-        "ticker":           ticker.upper(),
-        "ventana":          "5 años",
-        "total_movimientos": len([s for s in steps if "tipo" in s]),
-        "avg_costo_final":  avg_final,
-        "qty_final":        round(qty_acum, 4),
-        "pasos":            steps,
+        "ticker":              ticker.upper(),
+        "ventana":             "5 años",
+        "total_movimientos":   len(steps),
+        "correcciones_moneda": corrections,
+        "avg_costo_final":     avg_final,
+        "qty_final":           round(qty_acum, 4),
+        "mediana_precio":      round(median_p, 2),
+        "pasos":               steps,
     }
