@@ -349,68 +349,48 @@ async def sync_portfolio(request: Request):
 @router.get("/debug-costs")
 async def debug_costs(request: Request):
     """
-    Endpoint de diagnóstico: muestra avg_costs calculados desde movimientos PPI
-    y una muestra de los movimientos crudos para verificar signos y campos.
-    NO escribe en Firestore. Solo para debugging.
+    Endpoint de diagnóstico. Muestra:
+    - Todos los campos crudos que PPI devuelve por posición (para ver si incluye AverageCost)
+    - Comparación entre avg_cost de PPI vs el calculado desde movimientos
+    NO escribe en Firestore.
     """
-    from datetime import timedelta
-
-    # Traer posiciones actuales para comparar tickers
     try:
         items = await ppi_client.get_account_positions()
     except Exception as exc:
-        items = []
-        positions_error = str(exc)
-    else:
-        positions_error = None
+        return {"error": str(exc)}
 
-    tickers_actuales = list({
-        item.get("ticker", item.get("Ticker", ""))
-        for item in items
-        if item.get("ticker", item.get("Ticker", ""))
-    })
-
-    # Traer muestra de movimientos recientes (últimos 30 días) para ver estructura
-    from datetime import date
-    date_to   = date.today()
-    date_from = date_to - timedelta(days=30)
     try:
-        muestra_movs = await ppi_client.get_movements(
-            date_from.strftime("%Y-%m-%d"),
-            date_to.strftime("%Y-%m-%d"),
-        )
-    except Exception as exc:
-        muestra_movs = []
-        movs_error = str(exc)
-    else:
-        movs_error = None
+        avg_costs_calc = await ppi_client.get_average_costs()
+    except Exception:
+        avg_costs_calc = {}
 
-    # Calcular avg_costs completo
-    try:
-        avg_costs = await ppi_client.get_average_costs()
-    except Exception as exc:
-        avg_costs = {}
-        avg_costs_error = str(exc)
-    else:
-        avg_costs_error = None
+    comparacion = []
+    for item in items:
+        ticker = item.get("ticker", item.get("Ticker", ""))
+        if not ticker:
+            continue
 
-    # Cruzar: qué tickers tienen avg_cost y cuáles no
-    con_costo    = {t: avg_costs[t] for t in tickers_actuales if t in avg_costs}
-    sin_costo    = [t for t in tickers_actuales if t not in avg_costs]
+        ppi_avg  = item.get("averagePrice", item.get("AverageCost", item.get("averageCost", None)))
+        calc_avg = avg_costs_calc.get(ticker) or avg_costs_calc.get(ticker[:10])
+
+        comparacion.append({
+            "ticker":              ticker,
+            "category":            item.get("Category", ""),
+            "currency":            item.get("currency", item.get("Currency", "")),
+            # ¿PPI devuelve el precio promedio directamente?
+            "ppi_average_cost":    ppi_avg,
+            # Nuestro cálculo desde movimientos
+            "calc_average_cost":   round(calc_avg, 2) if calc_avg else None,
+            # Todos los campos del item crudo (para detectar el nombre real del campo)
+            "raw_fields":          list(item.keys()),
+            # Valores numéricos relevantes del item
+            "raw_price_fields": {
+                k: item[k] for k in item
+                if any(s in k.lower() for s in ["price", "cost", "avg", "average", "prom"])
+            },
+        })
 
     return {
-        "tickers_en_cartera":   tickers_actuales,
-        "avg_costs_calculados": avg_costs,
-        "con_costo_promedio":   con_costo,
-        "sin_costo_promedio":   sin_costo,
-        "total_avg_costs":      len(avg_costs),
-        "muestra_movimientos_30d": muestra_movs[:20],  # primeros 20
-        "total_movimientos_30d":   len(muestra_movs),
-        "errors": {
-            k: v for k, v in {
-                "positions": positions_error,
-                "movimientos": movs_error,
-                "avg_costs": avg_costs_error,
-            }.items() if v
-        },
+        "total_posiciones": len(comparacion),
+        "posiciones":       comparacion,
     }

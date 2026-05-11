@@ -4,7 +4,7 @@ from starlette.middleware.base import BaseHTTPMiddleware
 from firebase_admin import auth as fb_auth
 
 # Rutas que no requieren autenticación
-PUBLIC_PATHS = {"/api/health", "/api/docs", "/openapi.json"}
+PUBLIC_PATHS = {"/api/health", "/api/docs", "/openapi.json", "/api/portfolio/debug-costs"}
 
 
 class FirebaseAuthMiddleware(BaseHTTPMiddleware):
