@@ -210,10 +210,14 @@ _CATS_CON_MERCADO = set(_MARKET_PARAMS.keys())
 # ---------------------------------------------------------------------------
 
 @router.post("/sync")
-async def sync_portfolio(request: Request):
+async def sync_portfolio(request: Request, force_full: bool = False):
     """
     Sincroniza el portfolio del usuario desde PPI a Firestore.
     No requiere body — usa el uid del Firebase token verificado por middleware.
+
+    Params:
+      force_full=true  Ignora el caché incremental y recalcula desde 5 años de movimientos.
+                       Usar después de un fix en la lógica de avg_cost o para verificar valores.
 
     Manejo de datos obsoletos:
     - Si PPI no responde (mercado cerrado, fin de semana): retorna status "sin_datos_frescos"
@@ -235,13 +239,16 @@ async def sync_portfolio(request: Request):
         if snap.exists:
             existing[cat] = snap.to_dict()
 
-    cache_snap   = meta_ref.document("avg_costs").get()
     cached_state = None
-    if cache_snap.exists:
-        cached = cache_snap.to_dict()
-        if cached.get("full_sync_completed"):
-            cached_state = cached
-            # La primera vez (full_sync_completed=False) siempre corre el sync completo
+    if not force_full:
+        cache_snap = meta_ref.document("avg_costs").get()
+        if cache_snap.exists:
+            cached = cache_snap.to_dict()
+            if cached.get("full_sync_completed"):
+                cached_state = cached
+    else:
+        # Eliminar caché para forzar recálculo completo desde 5 años de movimientos
+        meta_ref.document("avg_costs").delete()
 
     # Intentar sync desde PPI. Si falla, Firestore queda intacto.
     try:
@@ -351,6 +358,7 @@ async def sync_portfolio(request: Request):
         "status": "ok",
         "uid": uid,
         "stale": not mercado_abierto,
+        "modo_sync": "full_5y" if force_full or cached_state is None else "incremental",
         "categorias_sincronizadas": list(grupos.keys()),
         "total_posiciones": sum(len(v) for v in grupos.values()),
         "timestamp": now,
@@ -410,16 +418,24 @@ async def debug_costs(request: Request):
 @router.get("/debug-movements/{ticker}")
 async def debug_movements(ticker: str, request: Request):
     """
-    Muestra todos los movimientos de un ticker en los últimos 5 años,
-    el cálculo sin corrección y el cálculo con corrección de moneda.
-    Útil para diagnosticar diferencias vs el broker.
+    Muestra todos los movimientos de un ticker en los últimos 5 años y el cálculo
+    paso a paso que coincide EXACTAMENTE con compute_avg_costs (price × qty, MEP real).
+
+    Campos por paso:
+      price_raw      → precio tal cual viene de PPI
+      price_usado     → precio en ARS después de corrección MEP si aplica
+      cost_compra     → qty × price_usado (lo que suma al costo, sin comisiones)
+      avg_precio      → precio promedio acumulado hasta ese movimiento
     """
-    import math
     import statistics as _stats
     from datetime import timedelta
+    from app.services.ppi_client import _ensure_mep_history, _ars_unit_price
 
     date_to   = datetime.now(timezone.utc)
     date_from = date_to - timedelta(days=1825)
+
+    # Cargar MEP histórico (mismo caché que usa compute_avg_costs)
+    mep_history = await _ensure_mep_history()
 
     raw_movs: list = []
     chunk_start = date_from
@@ -449,66 +465,71 @@ async def debug_movements(ticker: str, request: Request):
         if qty == 0 or price == 0:
             continue
         date_key = mov.get("settlementDate") or mov.get("date") or ""
-        movs_norm.append({"qty": qty, "price": price, "amount": amount,
-                          "date": date_key, "desc": mov.get("description", "")})
+        movs_norm.append({
+            "qty": qty, "price": price, "amount": amount,
+            "date": date_key, "desc": mov.get("description", ""),
+        })
     movs_norm.sort(key=lambda m: m["date"])
 
-    # Corrección de moneda
-    eff = [abs(m["amount"]) / m["qty"] for m in movs_norm if m["qty"] > 0 and m["amount"] != 0]
-    median_p = _stats.median(eff) if len(eff) >= 2 else 0
-    corrections = []
-    movs_corrected = []
-    for m in movs_norm:
-        mc = dict(m)
-        mc["amount_orig"] = m["amount"]
-        if median_p > 0 and m["qty"] > 0 and m["amount"] != 0:
-            unit_cost = abs(m["amount"]) / m["qty"]
-            ratio = median_p / unit_cost if unit_cost > 0 else 0
-            if ratio > 50:
-                power = round(math.log10(ratio))
-                scale = 10 ** max(1, power)
-                mc["amount"] = m["amount"] * scale
-                mc["correccion"] = f"×{scale} (ratio {ratio:.0f}x vs mediana {median_p:.0f})"
-                corrections.append(mc["correccion"])
-        movs_corrected.append(mc)
+    # Mediana de PRECIOS (igual que compute_avg_costs full sync)
+    prices_raw = [m["price"] for m in movs_norm if m["price"] > 0]
+    median_price = _stats.median(prices_raw) if len(prices_raw) >= 2 else 0.0
 
-    # Replay con corrección
+    # Replay idéntico a compute_avg_costs (price × qty, con corrección MEP)
     steps = []
     qty_acum = cost_acum = 0.0
-    for mc in movs_corrected:
-        tipo = "COMPRA" if mc["amount"] < 0 else "VENTA"
-        if mc["amount"] < 0:
-            qty_acum  += mc["qty"]
-            cost_acum += abs(mc["amount"])
-        elif mc["amount"] > 0 and qty_acum > 0:
+    corrections = []
+
+    for m in movs_norm:
+        tipo = "COMPRA" if m["amount"] < 0 else "VENTA"
+
+        # Corrección USD → ARS igual que _ars_unit_price en compute_avg_costs
+        unit_price = _ars_unit_price(m["price"], m["date"], median_price, mep_history)
+        correccion = None
+        if unit_price != m["price"]:
+            factor = round(unit_price / m["price"], 1)
+            correccion = f"×{factor} MEP ({m['date']}): {m['price']:.4f} USD → {unit_price:.2f} ARS"
+            corrections.append(correccion)
+
+        cost_compra = m["qty"] * unit_price  # sin comisiones
+
+        if m["amount"] < 0:                          # compra
+            qty_acum  += m["qty"]
+            cost_acum += cost_compra
+        elif m["amount"] > 0 and qty_acum > 0:       # venta FIFO
             avg_prev  = cost_acum / qty_acum
-            qty_acum  = max(0.0, qty_acum - mc["qty"])
+            qty_acum  = max(0.0, qty_acum - m["qty"])
             cost_acum = qty_acum * avg_prev
-        avg_now = (cost_acum / qty_acum) if qty_acum > 0 else 0
-        step = {
-            "fecha":       mc["date"],
-            "tipo":        tipo,
-            "qty":         mc["qty"],
-            "price":       mc["price"],
-            "amount_orig": mc["amount_orig"],
-            "amount_used": mc["amount"],
-            "qty_acum":    round(qty_acum, 4),
-            "cost_acum":   round(cost_acum, 2),
-            "avg_precio":  round(avg_now, 2),
-            "descripcion": mc["desc"],
+
+        avg_now = (cost_acum / qty_acum) if qty_acum > 0 else 0.0
+
+        step: dict = {
+            "fecha":        m["date"],
+            "tipo":         tipo,
+            "qty":          m["qty"],
+            "price_raw":    m["price"],
+            "price_usado":  round(unit_price, 4),
+            "cost_compra":  round(cost_compra, 2) if tipo == "COMPRA" else None,
+            "amount_ppi":   m["amount"],   # referencia: lo que PPI registró (incluye comisión)
+            "qty_acum":     round(qty_acum, 4),
+            "cost_acum":    round(cost_acum, 2),
+            "avg_precio":   round(avg_now, 2),
+            "descripcion":  m["desc"],
         }
-        if mc.get("correccion"):
-            step["correccion_moneda"] = mc["correccion"]
+        if correccion:
+            step["correccion_mep"] = correccion
         steps.append(step)
 
     avg_final = round(cost_acum / qty_acum, 2) if qty_acum > 0 else None
     return {
         "ticker":              ticker.upper(),
         "ventana":             "5 años",
+        "metodo":              "price × qty (sin comisiones) + MEP histórico exacto",
         "total_movimientos":   len(steps),
-        "correcciones_moneda": corrections,
-        "avg_costo_final":     avg_final,
+        "correcciones_mep":    corrections,
+        "avg_costo_final_ars": avg_final,
         "qty_final":           round(qty_acum, 4),
-        "mediana_precio":      round(median_p, 2),
+        "mediana_price_raw":   round(median_price, 4),
+        "mep_history_cargado": len(mep_history) > 0,
         "pasos":               steps,
     }
