@@ -309,6 +309,16 @@ async def sync_portfolio(request: Request, force_full: bool = False):
         if not ppi_has_cost:
             avg_cost_calc = avg_costs.get(ticker) or avg_costs.get(ticker[:10])
             if avg_cost_calc is not None:
+                # Ajuste por acciones corporativas (splits, cambios de ratio CEDEAR):
+                # si la qty acumulada en movimientos difiere de la qty actual en la
+                # posición, el costo total se preserva pero se divide entre más acciones.
+                # Ej: XOM split 4→5: avg_cost × (4/5) = valor correcto por acción.
+                actual_qty = float(item.get("quantity", item.get("Amount", 0)))
+                acum_qty   = (avg_costs_state.get("tickers") or {}).get(
+                    ticker, (avg_costs_state.get("tickers") or {}).get(ticker[:10], {})
+                ).get("qty", 0)
+                if acum_qty > 0 and actual_qty > 0 and abs(acum_qty - actual_qty) > 0.5:
+                    avg_cost_calc = round(avg_cost_calc * (acum_qty / actual_qty), 6)
                 item = {**item, "averagePrice": avg_cost_calc}
         grupos_raw[cat].append(item)
 
