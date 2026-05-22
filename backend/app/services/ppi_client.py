@@ -31,9 +31,14 @@ _mep_history_loaded: bool = False
 
 async def _ensure_mep_history() -> dict[str, float]:
     """
-    Descarga el historial completo de MEP desde bluelytics.com.ar y lo guarda
+    Descarga el historial de tipos de cambio desde bluelytics.com.ar y lo guarda
     en memoria. La próxima llamada devuelve el cache sin volver a descargar.
-    Formato de retorno: {"YYYY-MM-DD": tasa_venta, ...}
+
+    La API devuelve una lista plana: [{"date", "source", "value_sell", "value_buy"}, ...]
+    Sources disponibles: "Blue" y "Oficial". Usamos "Blue" como proxy del MEP
+    (históricamente son muy cercanos; el MEP dejó de estar disponible en el endpoint).
+
+    Formato de retorno: {"YYYY-MM-DD": tasa_venta_blue, ...}
     """
     global _mep_history_cache, _mep_history_loaded
     if _mep_history_loaded:
@@ -44,13 +49,28 @@ async def _ensure_mep_history() -> dict[str, float]:
             resp = await client.get("https://api.bluelytics.com.ar/v2/evolution.json")
             if resp.is_success:
                 data = resp.json()
-                mep_entries = data.get("MEP") or data.get("mep") or []
-                for entry in mep_entries:
+                # Nuevo formato: lista plana de registros con campo "source"
+                entries = data if isinstance(data, list) else (
+                    data.get("MEP") or data.get("mep") or []
+                )
+                for entry in entries:
+                    source   = entry.get("source", "")
                     date_str = str(entry.get("date", ""))[:10]
-                    sell     = float(entry.get("sell") or entry.get("venta") or 0)
-                    if date_str and sell > 0:
+                    # Preferir Blue como proxy de MEP; fallback a Oficial
+                    sell = float(
+                        entry.get("value_sell") or   # nuevo campo
+                        entry.get("sell")        or   # campo antiguo
+                        entry.get("venta")       or 0
+                    )
+                    if not date_str or sell <= 0:
+                        continue
+                    # Prioridad: Blue > Oficial (Blue ≈ MEP históricamente)
+                    if source in ("Blue", "MEP", "mep", ""):
+                        _mep_history_cache[date_str] = sell
+                    elif date_str not in _mep_history_cache:
                         _mep_history_cache[date_str] = sell
                 _mep_history_loaded = True
+                print(f"[BLUELYTICS] MEP histórico cargado: {len(_mep_history_cache)} fechas")
     except Exception as exc:
         print(f"[BLUELYTICS] Error cargando MEP histórico: {exc}")
 
