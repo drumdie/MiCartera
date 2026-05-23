@@ -115,6 +115,11 @@ Seguimiento de fases y hitos del proyecto PWA de cartera de inversiones argentin
 
 ### Seguridad — Hallazgos Audit Codex (2026-04-30)
 
+**🟡 MEDIUM — Precio promedio (pendiente post-verificación)**
+- [ ] `rend_usd_pct = 0%` para CEDEARs con `currency: "Pesos"` (cotizan en ARS en BYMA pero son activos USD). Necesita calcular rendimiento USD usando MEP al momento de compra vs MEP actual (`portfolio.py → _transform_position`)
+- [ ] Bonos: verificar si PPI devuelve `averagePrice` en posiciones. Si no → nuestro cálculo viene ÷100 del valor real (movimientos en precio por 1 VN, display por 100 VN)
+- [ ] GD38 / posiciones con más de 5 años de antigüedad: sin movimientos en ventana actual → mostrar avg_cost de PPI si disponible o `null`
+
 **🔴 HIGH**
 - [ ] `POST /api/prices/refresh` acepta cualquier usuario autenticado — restringir a admin claim o mover a scheduler-only (`prices.py`)
 - [ ] Detalles internos de PPI se propagan al cliente en errores — retornar mensaje genérico y loguear internamente (`portfolio.py:187`, `ppi_client.py:44,93`)
