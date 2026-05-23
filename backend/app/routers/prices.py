@@ -15,7 +15,7 @@ import asyncio
 from datetime import datetime, timezone, date, timedelta
 
 import httpx
-from fastapi import APIRouter, HTTPException, Request
+from fastapi import APIRouter, HTTPException, Request, status
 from firebase_admin import firestore
 
 from app.models.market import Cotizaciones
@@ -165,10 +165,14 @@ async def get_cotizaciones(request: Request):
     return doc.to_dict()
 
 
+_REFRESH_COOLDOWN_SEC = 30   # segundos mínimos entre refreshes manuales
+
+
 @router.post("/refresh")
 async def refresh_cotizaciones(request: Request):
     """
-    Fuerza un polling inmediato de cotizaciones (solo admin o usuarios autenticados).
+    Fuerza un polling inmediato de cotizaciones (usuarios autenticados).
+    Cooldown de 30s entre refreshes para evitar abuso de las APIs externas.
     Escribe en /market/cotizaciones y devuelve los valores frescos.
 
     Si alguna fuente no responde (ej: mercado cerrado en fin de semana),
@@ -181,6 +185,18 @@ async def refresh_cotizaciones(request: Request):
     # Leer valores previos como fallback antes de actualizar
     existing_snap = ref.get()
     existing = existing_snap.to_dict() if existing_snap.exists else {}
+
+    # Rate limiting: evitar que cualquier usuario autenticado martille las APIs externas.
+    # Si la última actualización fue hace menos de 30s, devolver el dato cacheado.
+    last_update = existing.get("ultima_actualizacion", "")
+    if last_update:
+        try:
+            last_dt = datetime.fromisoformat(last_update.replace("Z", "+00:00"))
+            elapsed = (datetime.now(timezone.utc) - last_dt).total_seconds()
+            if elapsed < _REFRESH_COOLDOWN_SEC:
+                return {"status": "ok", "cotizaciones": existing, "cached": True}
+        except Exception:
+            pass  # Si el timestamp es inválido, proceder con el refresh
 
     data = await _build_cotizaciones()
 

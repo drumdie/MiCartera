@@ -11,8 +11,11 @@ Los endpoints reales pueden variar. Ajustar según respuestas de la API.
 from __future__ import annotations
 
 import httpx
+import logging
 from datetime import datetime, timezone, timedelta
 from typing import Optional
+
+_logger = logging.getLogger(__name__)
 
 from app.core.config import settings
 
@@ -127,12 +130,14 @@ class PPIClient:
                 },
             )
             if resp.status_code != 200:
-                raise PPIError(f"PPI login falló: {resp.status_code} {resp.text}")
+                _logger.error("PPI login falló: %s %s", resp.status_code, resp.text)
+                raise PPIError(f"PPI login falló (HTTP {resp.status_code})")
 
             data = resp.json()
             self._access_token = data.get("accessToken") or data.get("AccessToken")
             if not self._access_token:
-                raise PPIError(f"PPI login: no accessToken en respuesta: {data}")
+                _logger.error("PPI login: no accessToken en respuesta: %s", data)
+                raise PPIError("PPI login: respuesta inesperada del servidor")
             # expirationDate es ISO datetime; si no está, asumimos 1 hora
             exp = data.get("expirationDate") or data.get("ExpiresIn")
             try:
@@ -176,7 +181,8 @@ class PPIClient:
                     headers=self._auth_headers(token),
                 )
             if not resp.is_success:
-                raise PPIError(f"PPI GET {path} → {resp.status_code}: {resp.text}")
+                _logger.error("PPI GET %s → %s: %s", path, resp.status_code, resp.text)
+                raise PPIError(f"PPI GET {path} → HTTP {resp.status_code}")
             return resp.json()
 
     # ------------------------------------------------------------------

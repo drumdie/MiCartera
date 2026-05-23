@@ -11,12 +11,15 @@ El uid viene de request.state.uid, inyectado por FirebaseAuthMiddleware.
 from __future__ import annotations
 
 import asyncio
+import logging
 from datetime import datetime, timezone
 
 from fastapi import APIRouter, HTTPException, Request
 from firebase_admin import firestore
 
 from app.services.ppi_client import ppi_client, PPIError
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api/portfolio", tags=["portfolio"])
 
@@ -264,6 +267,7 @@ async def sync_portfolio(request: Request, force_full: bool = False):
         )
         avg_costs, avg_costs_state = avg_result
     except Exception as exc:
+        logger.error("Sync PPI falló para uid=%s: %s", uid, exc)
         ultima_sync = max(
             (d.get("ultima_sync", "") for d in existing.values()),
             default="",
@@ -272,7 +276,6 @@ async def sync_portfolio(request: Request, force_full: bool = False):
             "status": "sin_datos_frescos",
             "stale": True,
             "ultima_sync_exitosa": ultima_sync,
-            "detalle": str(exc),
         }
 
     # Leer tipo de cambio MEP: Firestore → PPI → dolarapi.com
