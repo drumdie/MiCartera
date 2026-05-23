@@ -20,10 +20,13 @@ firebase_admin.initialize_app()
 
 # ---------------------------------------------------------------------------
 # PPI credentials (configurar en Firebase Console → Functions → Variables de entorno)
+# Deben coincidir con las 4 credenciales del panel PPI (Gestiones → API).
 # ---------------------------------------------------------------------------
-_PPI_BASE_URL    = os.environ.get("PPI_BASE_URL", "https://clientapi.portfoliopersonal.com")
-_PPI_API_KEY     = os.environ.get("PPI_API_KEY", "")
-_PPI_API_SECRET  = os.environ.get("PPI_API_SECRET", "")
+_PPI_BASE_URL          = os.environ.get("PPI_BASE_URL", "https://clientapi.portfoliopersonal.com")
+_PPI_AUTHORIZED_CLIENT = os.environ.get("PPI_AUTHORIZED_CLIENT", "")
+_PPI_CLIENT_KEY        = os.environ.get("PPI_CLIENT_KEY", "")
+_PPI_API_KEY           = os.environ.get("PPI_API_KEY", "")
+_PPI_API_SECRET        = os.environ.get("PPI_API_SECRET", "")
 
 # BCRA API (pública, sin credenciales)
 _BCRA_BASE = "https://api.bcra.gob.ar/estadisticas/v2.0"
@@ -33,9 +36,10 @@ _VAR_RIESGO_PAIS   = 5
 
 # ---------------------------------------------------------------------------
 # PPI — autenticación y cotizaciones
+# Esquema idéntico al backend (ppi_client.py): 4 credenciales en headers HTTP.
 # ---------------------------------------------------------------------------
 
-_ppi_token: Optional[str]            = None
+_ppi_token: Optional[str]             = None
 _ppi_token_expiry: Optional[datetime] = None
 
 
@@ -43,43 +47,85 @@ def _ppi_login() -> Optional[str]:
     """Obtiene un access token de PPI. Retorna None si falla."""
     global _ppi_token, _ppi_token_expiry
 
-    if not _PPI_API_KEY or not _PPI_API_SECRET:
-        print("[PPI] Credenciales no configuradas. Salteando polling de MEP/CCL.")
+    if not _PPI_AUTHORIZED_CLIENT or not _PPI_CLIENT_KEY or not _PPI_API_KEY or not _PPI_API_SECRET:
+        print("[PPI] Credenciales incompletas. Configurar PPI_AUTHORIZED_CLIENT, PPI_CLIENT_KEY, PPI_API_KEY, PPI_API_SECRET.")
         return None
 
     try:
         resp = httpx.post(
             f"{_PPI_BASE_URL}/api/1.0/Account/LoginApi",
-            json={"ApiKey": _PPI_API_KEY, "ApiSecret": _PPI_API_SECRET},
+            headers={
+                "AuthorizedClient": _PPI_AUTHORIZED_CLIENT,
+                "ClientKey":        _PPI_CLIENT_KEY,
+                "ApiKey":           _PPI_API_KEY,
+                "ApiSecret":        _PPI_API_SECRET,
+            },
             timeout=10,
         )
-        if resp.is_success:
-            data = resp.json()
-            _ppi_token = data.get("AccessToken")
-            expires_in = int(data.get("ExpiresIn", 3600))
+        if resp.status_code != 200:
+            print(f"[PPI] Login falló: HTTP {resp.status_code}")
+            return None
+
+        data  = resp.json()
+        token = data.get("accessToken") or data.get("AccessToken")
+        if not token:
+            print(f"[PPI] Login: no accessToken en respuesta")
+            return None
+
+        _ppi_token = token
+        exp = data.get("expirationDate") or data.get("ExpiresIn")
+        try:
+            _ppi_token_expiry = datetime.fromisoformat(
+                str(exp).replace("Z", "+00:00")
+            ) - timedelta(seconds=60)
+        except Exception:
+            expires_in = int(exp) if str(exp).isdigit() else 3600
             _ppi_token_expiry = datetime.now(timezone.utc) + timedelta(seconds=expires_in - 60)
-            return _ppi_token
+
+        return _ppi_token
+
     except Exception as exc:
-        print(f"[PPI] Login falló: {exc}")
-    return None
+        print(f"[PPI] Login error: {exc}")
+        return None
 
 
 def _ppi_get_token() -> Optional[str]:
     global _ppi_token, _ppi_token_expiry
-    if not _ppi_token or datetime.now(timezone.utc) >= (_ppi_token_expiry or datetime.min.replace(tzinfo=timezone.utc)):
+    if not _ppi_token or datetime.now(timezone.utc) >= (
+        _ppi_token_expiry or datetime.min.replace(tzinfo=timezone.utc)
+    ):
         return _ppi_login()
     return _ppi_token
 
 
+def _ppi_auth_headers(token: str) -> dict:
+    """Headers de autenticación completos para cada request a PPI."""
+    return {
+        "Authorization":    f"Bearer {token}",
+        "AuthorizedClient": _PPI_AUTHORIZED_CLIENT,
+        "ClientKey":        _PPI_CLIENT_KEY,
+        "ApiKey":           _PPI_API_KEY,
+        "ApiSecret":        _PPI_API_SECRET,
+    }
+
+
 def _ppi_market_price(ticker: str, instrument_type: str, settlement: str) -> float:
+    """
+    Retorna el precio de mercado actual de un instrumento PPI.
+    Params idénticos a los que usa el backend (ppi_client.py → get_market_data).
+    """
     token = _ppi_get_token()
     if not token:
         return 0.0
     try:
         resp = httpx.get(
             f"{_PPI_BASE_URL}/api/1.0/MarketData/Current",
-            params={"instrumentType": instrument_type, "settlement": settlement, "ticker": ticker},
-            headers={"Authorization": f"Bearer {token}"},
+            params={
+                "Type":       instrument_type,
+                "Settlement": settlement,
+                "Ticker":     ticker,
+            },
+            headers=_ppi_auth_headers(token),
             timeout=10,
         )
         if resp.is_success:
@@ -91,16 +137,16 @@ def _ppi_market_price(ticker: str, instrument_type: str, settlement: str) -> flo
 
 
 def _calc_dolar_mep() -> float:
-    """MEP ≈ AL30 ARS / AL30D USD (liquidación T+1)."""
-    ars = _ppi_market_price("AL30",  "Bonos", "T+1")
-    usd = _ppi_market_price("AL30D", "Bonos", "T+1")
+    """MEP ≈ AL30 ARS / AL30D USD (liquidación A-24HS, igual que el backend)."""
+    ars = _ppi_market_price("AL30",  "BONOS", "A-24HS")
+    usd = _ppi_market_price("AL30D", "BONOS", "A-24HS")
     return round(ars / usd, 2) if usd > 0 else 0.0
 
 
 def _calc_dolar_ccl() -> float:
-    """CCL ≈ GD30 ARS / GD30D USD (liquidación T+2)."""
-    ars = _ppi_market_price("GD30",  "Bonos", "T+2")
-    usd = _ppi_market_price("GD30D", "Bonos", "T+2")
+    """CCL ≈ GD30 ARS / GD30D USD (liquidación A-48HS, igual que el backend)."""
+    ars = _ppi_market_price("GD30",  "BONOS", "A-48HS")
+    usd = _ppi_market_price("GD30D", "BONOS", "A-48HS")
     return round(ars / usd, 2) if usd > 0 else 0.0
 
 
@@ -134,26 +180,49 @@ def polling_cotizaciones(event: scheduler_fn.ScheduledEvent) -> None:
     Se ejecuta cada 60 segundos.
     1. Obtiene MEP y CCL desde PPI (via bonos AL30/GD30)
     2. Obtiene BNA, Oficial y Riesgo País desde BCRA (API pública)
-    3. Escribe en /market/cotizaciones
+    3. Preserva el último valor conocido si alguna fuente devuelve 0
+       (mercado cerrado o error transitorio — nunca sobreescribe con 0)
+    4. Escribe en /market/cotizaciones
     """
-    mep    = _calc_dolar_mep()
-    ccl    = _calc_dolar_ccl()
-    bna    = _bcra_variable(_VAR_DOLAR_BNA)
+    db  = firestore.client()
+    ref = db.collection("market").document("cotizaciones")
+
+    # Leer valores previos para usar como fallback
+    existing: dict = {}
+    try:
+        snap = ref.get()
+        if snap.exists:
+            existing = snap.to_dict() or {}
+    except Exception as exc:
+        print(f"[polling] No se pudo leer cotizaciones previas: {exc}")
+
+    def _pick_float(new_val: float, field: str) -> float:
+        """Usa new_val si > 0, sino preserva el último valor conocido."""
+        return new_val if new_val > 0 else float(existing.get(field, 0) or 0)
+
+    def _pick_int(new_val: int, field: str) -> int:
+        return new_val if new_val > 0 else int(existing.get(field, 0) or 0)
+
+    mep     = _calc_dolar_mep()
+    ccl     = _calc_dolar_ccl()
+    bna     = _bcra_variable(_VAR_DOLAR_BNA)
     oficial = _bcra_variable(_VAR_DOLAR_OFICIAL)
-    riesgo = int(_bcra_variable(_VAR_RIESGO_PAIS))
+    riesgo  = int(_bcra_variable(_VAR_RIESGO_PAIS))
 
     data = {
-        "dolar_mep":            mep,
-        "dolar_ccl":            ccl,
-        "dolar_bna":            bna,
-        "dolar_oficial":        oficial,
-        "riesgo_pais_pb":       riesgo,
+        "dolar_mep":            _pick_float(mep,    "dolar_mep"),
+        "dolar_ccl":            _pick_float(ccl,    "dolar_ccl"),
+        "dolar_bna":            _pick_float(bna,    "dolar_bna"),
+        "dolar_oficial":        _pick_float(oficial, "dolar_oficial"),
+        "riesgo_pais_pb":       _pick_int(riesgo,   "riesgo_pais_pb"),
         "ultima_actualizacion": datetime.now(timezone.utc).isoformat(),
     }
 
-    db = firestore.client()
-    db.collection("market").document("cotizaciones").set(data)
-    print(f"[polling] MEP={mep} CCL={ccl} BNA={bna} RP={riesgo} pb")
+    ref.set(data)
+    print(
+        f"[polling] MEP={data['dolar_mep']} CCL={data['dolar_ccl']} "
+        f"BNA={data['dolar_bna']} RP={data['riesgo_pais_pb']}pb"
+    )
 
 
 # ---------------------------------------------------------------------------
