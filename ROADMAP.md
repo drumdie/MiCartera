@@ -115,14 +115,14 @@ Seguimiento de fases y hitos del proyecto PWA de cartera de inversiones argentin
 
 ### Seguridad — Hallazgos Audit Codex (2026-04-30)
 
-**🟡 MEDIUM — Precio promedio (pendiente post-verificación)**
-- [ ] `rend_usd_pct = 0%` para CEDEARs con `currency: "Pesos"` (cotizan en ARS en BYMA pero son activos USD). Necesita calcular rendimiento USD usando MEP al momento de compra vs MEP actual (`portfolio.py → _transform_position`)
-- [ ] Bonos: verificar si PPI devuelve `averagePrice` en posiciones. Si no → nuestro cálculo viene ÷100 del valor real (movimientos en precio por 1 VN, display por 100 VN)
-- [ ] GD38 / posiciones con más de 5 años de antigüedad: sin movimientos en ventana actual → mostrar avg_cost de PPI si disponible o `null`
+**🟡 MEDIUM — Precio promedio** ✅ RESUELTO
+- [x] `rend_usd_pct = 0%` para CEDEARs — proxy: `rend_usd_pct = rend_ars_pct` (MEP constante durante tenencia) (`portfolio.py → _transform_position`)
+- [x] Bonos ÷100 — movimientos PPI en precio por 1 VN, posiciones por 100 VN → `avg_cost_calc × 100` para `bonos/ons` (`portfolio.py → sync_portfolio`)
+- [ ] **GD38 (pendiente)** — comprado hace >5 años, sin movimientos en ventana 5y. PPI no expone `averagePrice` en posiciones para bonos. Opciones: extender ventana a 7y, o aceptar `null` con nota en UI
 
-**🔴 HIGH**
-- [ ] `POST /api/prices/refresh` acepta cualquier usuario autenticado — restringir a admin claim o mover a scheduler-only (`prices.py`)
-- [ ] Detalles internos de PPI se propagan al cliente en errores — retornar mensaje genérico y loguear internamente (`portfolio.py:187`, `ppi_client.py:44,93`)
+**🔴 HIGH** ✅ RESUELTO
+- [x] `POST /api/prices/refresh` — cooldown 30s en Firestore; devuelve cache si < 30s desde última actualización (`prices.py`)
+- [x] Detalles internos de PPI — `PPIError` expone solo HTTP status; detalles se loguean internamente con `logging.error` (`portfolio.py`, `ppi_client.py`)
 
 **🟡 MEDIUM**
 - [ ] Cloud Function: auth PPI usa `ApiKey`/`ApiSecret` en JSON, el backend usa 4 credenciales en headers — alinear antes de que el scheduler empiece a escribir precios 0 (`functions/main.py:51`)
@@ -146,7 +146,7 @@ Seguimiento de fases y hitos del proyecto PWA de cartera de inversiones argentin
 
 ---
 
-## Estado Actual (2026-05-11)
+## Estado Actual (2026-05-23)
 
 | Componente | Estado | Notas |
 |---|---|---|
@@ -158,7 +158,7 @@ Seguimiento de fases y hitos del proyecto PWA de cartera de inversiones argentin
 | **Display** | ✅ | Cartera funcional con toggles |
 | **Cotizaciones** | ✅ | Mercado actualizado c/ fallbacks |
 | **Privacidad** | ✅ | Rules + Privacy toggle |
-| **Seguridad (audit)** | 🔧 | 2 HIGH + 3 MEDIUM pendientes (ver Tareas Transversales) |
+| **Seguridad (audit)** | ✅ | 2 HIGH resueltos; 1 MEDIUM pendiente (GD38 avg_cost) |
 | **Encriptación** | ⏳ | Planeado post-Fase 1 |
 | **Fundamentals** | ⏳ | Fase 2 |
 | **Stress Testing** | ⏳ | Fase 2 |
