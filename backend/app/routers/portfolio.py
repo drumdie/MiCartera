@@ -87,6 +87,7 @@ def _transform_position(
     item: dict,
     dolar_mep: float = 0.0,
     rend_dia_ppi: float | None = None,
+    categoria: str = "",
 ) -> dict:
     """Transforma un item de la API PPI al formato MiCartera."""
     ticker      = item.get("ticker",      item.get("Ticker", ""))
@@ -130,6 +131,11 @@ def _transform_position(
             rend_ars_pct = rend_orig  # proxy: no incluye variación del MEP durante la tenencia
         else:
             rend_ars_pct = rend_orig
+            # CEDEARs: cotizan en ARS en BYMA pero el subyacente es USD.
+            # rend_usd_pct real requeriría MEP al momento de compra (no disponible por posición).
+            # Proxy: mismo % que ARS (equivale a MEP constante durante la tenencia).
+            if categoria == "cedears":
+                rend_usd_pct = rend_orig
 
     # Rendimiento del día: viene directo de PPI (marketChangePercent vs cierre anterior)
     rend_dia_pct = round(rend_dia_ppi, 2) if rend_dia_ppi is not None else 0.0
@@ -309,6 +315,12 @@ async def sync_portfolio(request: Request, force_full: bool = False):
         if not ppi_has_cost:
             avg_cost_calc = avg_costs.get(ticker) or avg_costs.get(ticker[:10])
             if avg_cost_calc is not None:
+                # Bonos y ONs: PPI reporta precio en movimientos por 1 VN (Valor Nominal),
+                # pero las posiciones se cotizan por cada 100 VN (igual que el broker).
+                # Ej: AE38 → movimiento price=238.29 → precio real = 238.29 × 100 = 23.829
+                if cat in ("bonos", "ons"):
+                    avg_cost_calc = round(avg_cost_calc * 100, 6)
+
                 # Ajuste por acciones corporativas (splits, cambios de ratio CEDEAR):
                 # si la qty acumulada en movimientos difiere de la qty actual en la
                 # posición, el costo total se preserva pero se divide entre más acciones.
@@ -319,6 +331,7 @@ async def sync_portfolio(request: Request, force_full: bool = False):
                 ).get("qty", 0)
                 if acum_qty > 0 and actual_qty > 0 and abs(acum_qty - actual_qty) > 0.5:
                     avg_cost_calc = round(avg_cost_calc * (acum_qty / actual_qty), 6)
+
                 item = {**item, "averagePrice": avg_cost_calc}
         grupos_raw[cat].append(item)
 
@@ -347,7 +360,7 @@ async def sync_portfolio(request: Request, force_full: bool = False):
             rend_dia = opening_prices.get(ticker)
             if rend_dia is None and ticker in rend_dia_conocido:
                 rend_dia = rend_dia_conocido[ticker]
-            grupos[cat].append(_transform_position(item, dolar_mep, rend_dia))
+            grupos[cat].append(_transform_position(item, dolar_mep, rend_dia, cat))
 
     # Escribir en Firestore
     now = datetime.now(timezone.utc).isoformat()
