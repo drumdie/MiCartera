@@ -101,9 +101,9 @@ export default function Dashboard() {
     }
   })()
   const rendPct = (activeCurrency === 'ARS' || activeCurrency === 'BNA')
-    ? (resumen?.rend_30d_ars_pct     ?? 0)
-    : (resumen?.rend_30d_usd_mep_pct ?? 0)
-  const rendPos = rendPct >= 0
+    ? (resumen?.rend_total_ars_pct     ?? null)
+    : (resumen?.rend_total_usd_mep_pct ?? null)
+  const rendPos = (rendPct ?? 0) >= 0
 
   // ── KPIs ──────────────────────────────────────────────────────────────────
   const liqPct = portfolio?.liquidez?.pct_cartera    ?? 0
@@ -138,9 +138,12 @@ export default function Dashboard() {
           <div className="total-amount"><PrivacyMask>{totalDisp}</PrivacyMask></div>
           <div className="total-sub">{totalSub}</div>
           <div className="total-rend">
-            <span className="rend-label">Rend. últ. 30 días</span>
+            <span className="rend-label">Rend. desde compra</span>
             <span className={`rend-val${rendPos ? '' : ' neg'}`}>
-              {rendPos ? '▲' : '▼'} {rendPos ? '+' : ''}{rendPct.toFixed(2).replace('.', ',')}%
+              {rendPct != null
+                ? <>{rendPos ? '▲' : '▼'} {rendPos ? '+' : ''}{rendPct.toFixed(2).replace('.', ',')}%</>
+                : <span style={{ color: 'var(--text-muted, #888)', fontSize: '0.85em' }}>N/D</span>
+              }
             </span>
           </div>
         </div>

@@ -65,6 +65,22 @@ function computePortfolio(raw, cotizaciones) {
 function computeResumen(portfolio) {
   if (!portfolio) return null
   const total = portfolio._valor_total_ars
+
+  // Rendimiento total desde precio de compra — agregado de todas las categorías
+  // (excluye liquidez, que no tiene costo promedio)
+  const cats = [portfolio.acciones_ar, portfolio.cedears, portfolio.bonos, portfolio.ons, portfolio.fci]
+  const totalGananciaARS = cats.reduce((s, c) => s + (c.ganancia_ars     ?? 0), 0)
+  const totalGananciaUSD = cats.reduce((s, c) => s + (c.ganancia_usd_mep ?? 0), 0)
+  const totalCostoARS    = cats.reduce((s, c) => s + (c.costo_total_ars  ?? 0), 0)
+
+  // null cuando no hay costo de compra (primer sync sin avg_costs calculados)
+  const rendARS = totalCostoARS > 0
+    ? parseFloat((totalGananciaARS / totalCostoARS * 100).toFixed(2))
+    : null
+  const rendUSD = totalCostoARS > 0
+    ? parseFloat((totalGananciaUSD / (totalCostoARS) * 100).toFixed(2))
+    : null
+
   return {
     valor_total_ars: total,
     composicion_pct: {
@@ -75,8 +91,14 @@ function computeResumen(portfolio) {
       fci:         portfolio.fci.pct_cartera,
       liquidez:    portfolio.liquidez.pct_cartera,
     },
-    rend_30d_usd_mep_pct: 0,
-    rend_30d_ars_pct:     0,
+    ganancia_total_ars:    totalGananciaARS,
+    ganancia_total_usd:    totalGananciaUSD,
+    costo_total_ars:       totalCostoARS,
+    rend_total_ars_pct:    rendARS,
+    rend_total_usd_mep_pct: rendUSD,
+    // backwards-compat: Dashboard todavía usa estos nombres
+    rend_30d_ars_pct:      rendARS,
+    rend_30d_usd_mep_pct:  rendUSD,
   }
 }
 

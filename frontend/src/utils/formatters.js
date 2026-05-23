@@ -60,9 +60,9 @@ export function currencyLabel(currency) {
 }
 
 // Retorna el rendimiento correcto según la moneda activa.
-// Para instrumentos ARS, rend_usd_pct es 0 (no tenemos MEP histórico),
-// así que usamos rend_ars_pct como proxy en cualquier moneda.
+// Devuelve null (→ '—') cuando la posición no tiene precio de compra calculado.
 export function getRendForCurrency(position, currency) {
-  if (currency === 'ARS' || currency === 'BNA') return position.rend_ars_pct ?? 0
-  return position.rend_usd_pct || position.rend_ars_pct || 0
+  if (currency === 'ARS' || currency === 'BNA') return position.rend_ars_pct ?? null
+  // Para MEP/CCL: preferir rend_usd_pct (CEDEARs/bonos); fallback a rend_ars_pct (acciones)
+  return position.rend_usd_pct ?? position.rend_ars_pct ?? null
 }
