@@ -59,12 +59,14 @@ function computePortfolio(raw, cotizaciones) {
     fci:         withPosPct(fci),
     liquidez:    { ...liquidez, pct_cartera: pct(liquidez.subtotal_ars) },
     _valor_total_ars: total,
+    _dolar_mep:       cotizaciones.dolar_mep ?? 0,
   }
 }
 
 function computeResumen(portfolio) {
   if (!portfolio) return null
-  const total = portfolio._valor_total_ars
+  const total     = portfolio._valor_total_ars
+  const dolar_mep = portfolio._dolar_mep ?? 0
 
   // Rendimiento total desde precio de compra — agregado de todas las categorías
   // (excluye liquidez, que no tiene costo promedio)
@@ -77,8 +79,13 @@ function computeResumen(portfolio) {
   const rendARS = totalCostoARS > 0
     ? parseFloat((totalGananciaARS / totalCostoARS * 100).toFixed(2))
     : null
-  const rendUSD = totalCostoARS > 0
-    ? parseFloat((totalGananciaUSD / (totalCostoARS) * 100).toFixed(2))
+
+  // rendUSD: ganancia en USD / costo en USD (costo_ars ÷ MEP actual)
+  // Nota: con el proxy de MEP constante esto es equivalente a rendARS en %.
+  // La diferencia ARS vs USD solo aparece con retornos históricos (feature futuro).
+  const totalCostoUSD = dolar_mep > 0 ? totalCostoARS / dolar_mep : 0
+  const rendUSD = totalCostoUSD > 0
+    ? parseFloat((totalGananciaUSD / totalCostoUSD * 100).toFixed(2))
     : null
 
   return {
@@ -91,14 +98,14 @@ function computeResumen(portfolio) {
       fci:         portfolio.fci.pct_cartera,
       liquidez:    portfolio.liquidez.pct_cartera,
     },
-    ganancia_total_ars:    totalGananciaARS,
-    ganancia_total_usd:    totalGananciaUSD,
-    costo_total_ars:       totalCostoARS,
-    rend_total_ars_pct:    rendARS,
+    ganancia_total_ars:     totalGananciaARS,
+    ganancia_total_usd:     totalGananciaUSD,
+    costo_total_ars:        totalCostoARS,
+    rend_total_ars_pct:     rendARS,
     rend_total_usd_mep_pct: rendUSD,
-    // backwards-compat: Dashboard todavía usa estos nombres
-    rend_30d_ars_pct:      rendARS,
-    rend_30d_usd_mep_pct:  rendUSD,
+    // backwards-compat
+    rend_30d_ars_pct:       rendARS,
+    rend_30d_usd_mep_pct:   rendUSD,
   }
 }
 

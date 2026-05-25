@@ -105,6 +105,19 @@ export default function Dashboard() {
     : (resumen?.rend_total_usd_mep_pct ?? null)
   const rendPos = (rendPct ?? 0) >= 0
 
+  // Ganancia absoluta en moneda activa
+  const gananciaARS = resumen?.ganancia_total_ars ?? null
+  const gananciaUSD = resumen?.ganancia_total_usd ?? null
+  const gananciaDisp = (() => {
+    if (activeCurrency === 'ARS' || activeCurrency === 'BNA')
+      return gananciaARS != null ? formatARS(gananciaARS) : null
+    if (activeCurrency === 'MEP')
+      return gananciaUSD != null ? formatUSD(gananciaUSD) : null
+    if (activeCurrency === 'CCL')
+      return gananciaUSD != null ? formatUSD(gananciaUSD) : null
+    return null
+  })()
+
   // ── KPIs ──────────────────────────────────────────────────────────────────
   const liqPct = portfolio?.liquidez?.pct_cartera    ?? 0
   const liqUSD = portfolio?.liquidez?.usd_total_aprox ?? 0
@@ -146,6 +159,11 @@ export default function Dashboard() {
               }
             </span>
           </div>
+          {gananciaDisp != null && (
+            <div style={{ fontSize: 11, color: (gananciaARS ?? 0) >= 0 ? 'var(--green, #00e5a0)' : 'var(--red, #e05c5c)', marginTop: 2, textAlign: 'right' }}>
+              {(gananciaARS ?? 0) >= 0 ? '+' : ''}{gananciaDisp} ganancia acumulada
+            </div>
+          )}
         </div>
 
         {/* Distribución */}

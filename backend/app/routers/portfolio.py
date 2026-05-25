@@ -335,7 +335,17 @@ async def sync_portfolio(request: Request, force_full: bool = False):
                 if acum_qty > 0 and actual_qty > 0 and abs(acum_qty - actual_qty) > 0.5:
                     avg_cost_calc = round(avg_cost_calc * (acum_qty / actual_qty), 6)
 
-                item = {**item, "averagePrice": avg_cost_calc}
+                # Corrección de doble conversión para instrumentos USD:
+                # Nuestra avg_cost viene de movimientos PPI (reportados en ARS).
+                # Si el instrumento tiene currency="Dolares", _transform_position
+                # va a multiplicar averagePrice × dolar_mep creyendo que está en USD.
+                # → Si inyectamos ARS directamente: ARS × MEP = valor ×1432 → -99%
+                # → Fix: inyectar en USD (÷ MEP) para que la conversión devuelva ARS correcto.
+                currency_item = item.get("currency", item.get("Currency", "Pesos"))
+                if "olar" in currency_item.lower() and dolar_mep > 0:
+                    item = {**item, "averagePrice": round(avg_cost_calc / dolar_mep, 6)}
+                else:
+                    item = {**item, "averagePrice": avg_cost_calc}
         grupos_raw[cat].append(item)
 
     # Obtener precios de apertura en paralelo para calcular rend_dia_pct
