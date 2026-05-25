@@ -25,8 +25,13 @@ export default function Header({ onSyncDone }) {
               : `${user.displayName ?? user.email} · Abr 2026`
             }
           </div>
-          {/* Estado de sincronización */}
-          {!isDemo && !syncing && (() => {
+          {/* Estado de sincronización — siempre visible */}
+          {!isDemo && (() => {
+            if (syncing) return (
+              <div style={{ fontSize: 8, color: 'var(--accent)', marginTop: 2 }}>
+                ⟳ Sincronizando…
+              </div>
+            )
             const refDate = ultimaSync ?? lastSync
             const label = refDate
               ? new Date(refDate).toLocaleString('es-AR', {
@@ -39,18 +44,22 @@ export default function Header({ onSyncDone }) {
                 ⚠ Mercado cerrado · datos del {label}
               </div>
             )
-            if (label) return (
-              <div style={{ fontSize: 8, color: 'var(--muted)', opacity: 0.5, marginTop: 2 }}>
-                Sync: {label}
+            if (syncError) return (
+              <div style={{ fontSize: 8, color: 'var(--red, #e05c5c)', marginTop: 2 }}>
+                {syncError}{label ? ` · último sync: ${label}` : ''}
               </div>
             )
-            return null
+            if (label) return (
+              <div style={{ fontSize: 8, color: 'var(--muted)', marginTop: 2 }}>
+                Último sync: {label}
+              </div>
+            )
+            return (
+              <div style={{ fontSize: 8, color: 'var(--muted)', opacity: 0.5, marginTop: 2 }}>
+                Sin sincronizar
+              </div>
+            )
           })()}
-          {syncError && !isStale && (
-            <div style={{ fontSize: 8, color: 'var(--red, #e05c5c)', marginTop: 2 }}>
-              {syncError}
-            </div>
-          )}
         </div>
 
         <div style={{ textAlign: 'right' }}>

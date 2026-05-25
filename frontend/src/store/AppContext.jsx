@@ -1,4 +1,4 @@
-import { createContext, useContext, useState, useCallback } from 'react'
+import { createContext, useContext, useState, useCallback, useEffect, useRef } from 'react'
 import {
   MOCK_COTIZACIONES, MOCK_RESUMEN,
   MOCK_ACCIONES_AR, MOCK_CEDEARS, MOCK_BONOS,
@@ -94,6 +94,15 @@ export function AppProvider({ children }) {
       setSyncing(false)
     }
   }, [user, refreshStress])
+
+  // Auto-sync al login: dispara una sola vez cuando el usuario se autentica.
+  // Si el mercado está cerrado o PPI no responde, deja los últimos datos conocidos.
+  const _autoSyncDone = useRef(false)
+  useEffect(() => {
+    if (!user || _autoSyncDone.current) return
+    _autoSyncDone.current = true
+    syncPPI()
+  }, [user, syncPPI])
 
   return (
     <AppContext.Provider value={{
