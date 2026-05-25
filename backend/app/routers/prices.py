@@ -18,6 +18,7 @@ import httpx
 from fastapi import APIRouter, HTTPException, Request, status
 from firebase_admin import firestore
 
+from app.core.config import settings
 from app.models.market import Cotizaciones
 from app.services.ppi_client import ppi_client
 
@@ -171,7 +172,8 @@ _REFRESH_COOLDOWN_SEC = 30   # segundos mínimos entre refreshes manuales
 @router.post("/refresh")
 async def refresh_cotizaciones(request: Request):
     """
-    Fuerza un polling inmediato de cotizaciones (usuarios autenticados).
+    Fuerza un polling inmediato de cotizaciones.
+    Solo el administrador (ADMIN_UID en .env) puede invocar este endpoint.
     Cooldown de 30s entre refreshes para evitar abuso de las APIs externas.
     Escribe en /market/cotizaciones y devuelve los valores frescos.
 
@@ -179,6 +181,9 @@ async def refresh_cotizaciones(request: Request):
     preserva el último valor conocido de Firestore en lugar de escribir 0.
     Así el MEP del viernes permanece hasta que vuelva a abrirse el mercado.
     """
+    if settings.ADMIN_UID and request.state.uid != settings.ADMIN_UID:
+        raise HTTPException(status_code=403, detail="No autorizado")
+
     db = firestore.client()
     ref = db.collection("market").document("cotizaciones")
 

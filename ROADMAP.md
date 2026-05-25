@@ -121,8 +121,8 @@ Seguimiento de fases y hitos del proyecto PWA de cartera de inversiones argentin
 - [ ] **GD38 (pendiente)** — comprado hace >5 años, sin movimientos en ventana 5y. PPI no expone `averagePrice` en posiciones para bonos. Opciones: extender ventana a 7y, o aceptar `null` con nota en UI
 
 **🔴 HIGH** ✅ RESUELTO
-- [x] `POST /api/prices/refresh` — cooldown 30s en Firestore; devuelve cache si < 30s desde última actualización (`prices.py`)
-- [x] Detalles internos de PPI — `PPIError` expone solo HTTP status; detalles se loguean internamente con `logging.error` (`portfolio.py`, `ppi_client.py`)
+- [x] `POST /api/prices/refresh` — restringido a `ADMIN_UID` (env var `config.py`). Cooldown 30s adicional. (`prices.py`)
+- [x] Debug endpoints (`/debug-costs`, `/debug-movements/*`) eran públicos (sin auth) — ahora requieren Firebase token. Error en `debug-costs` ya no expone detalles del broker. (`middleware/auth.py`, `portfolio.py`)
 
 **🟡 MEDIUM**
 - [ ] Cloud Function: auth PPI usa `ApiKey`/`ApiSecret` en JSON, el backend usa 4 credenciales en headers — alinear antes de que el scheduler empiece a escribir precios 0 (`functions/main.py:51`)

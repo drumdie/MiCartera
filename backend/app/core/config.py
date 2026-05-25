@@ -26,5 +26,9 @@ class Settings(BaseSettings):
     # Polling de cotizaciones (segundos)
     POLLING_INTERVAL: int = 60
 
+    # UID del administrador (owner). Solo este UID puede hacer POST /api/prices/refresh.
+    # Copiar desde Firebase Console → Authentication → Users.
+    ADMIN_UID: str = ""
+
 
 settings = Settings()

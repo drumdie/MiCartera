@@ -402,7 +402,8 @@ async def debug_costs(request: Request):
     try:
         items = await ppi_client.get_account_positions()
     except Exception as exc:
-        return {"error": str(exc)}
+        logger.error("debug-costs: error obteniendo posiciones: %s", exc)
+        return {"error": "No se pudo obtener datos del broker"}
 
     try:
         avg_costs_calc = await ppi_client.get_average_costs()
