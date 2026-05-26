@@ -4,6 +4,7 @@ import { usePrivacy } from '../hooks/usePrivacy'
 import { formatARS, formatUSD } from '../utils/formatters'
 import { TICKERS_TV } from '../data/mockPortfolio'
 import { apiPost } from '../services/apiClient'
+import { addCatalyst, deleteCatalyst } from '../services/portfolioService'
 
 import Header          from '../components/layout/Header'
 import CurrencyToggle  from '../components/layout/CurrencyToggle'
@@ -51,6 +52,10 @@ export default function Dashboard() {
   const [modalOpen,        setModalOpen]        = useState(false)
   const [toastMsg,         setToastMsg]         = useState('')
   const [fundRefreshing,   setFundRefreshing]   = useState(false)
+  const [showCatForm,      setShowCatForm]      = useState(false)
+  const [catForm,          setCatForm]          = useState({
+    fecha: '', evento: '', descripcion: '', tickers: '', urgencia: 'cercano', tipo: 'earnings',
+  })
 
   const showToast = (msg) => {
     setToastMsg(msg)
@@ -91,6 +96,36 @@ export default function Dashboard() {
   useEffect(() => {
     if (lastSync) showToast('✓ Cartera sincronizada con PPI')
   }, [lastSync])
+
+  const handleAddCatalyst = async (e) => {
+    e.preventDefault()
+    if (!catForm.fecha || !catForm.evento) return
+    const catalyst = {
+      fecha:             catForm.fecha,
+      evento:            catForm.evento.trim(),
+      descripcion:       catForm.descripcion.trim() || null,
+      tickers_afectados: catForm.tickers.split(',').map(t => t.trim()).filter(Boolean),
+      urgencia:          catForm.urgencia,
+      tipo:              catForm.tipo,
+    }
+    try {
+      await addCatalyst(user.uid, catalyst)
+      setCatForm({ fecha: '', evento: '', descripcion: '', tickers: '', urgencia: 'cercano', tipo: 'earnings' })
+      setShowCatForm(false)
+      showToast('✓ Evento agregado')
+    } catch {
+      showToast('Error al guardar el evento')
+    }
+  }
+
+  const handleDeleteCatalyst = async (catalyst) => {
+    try {
+      await deleteCatalyst(user.uid, catalyst)
+      showToast('Evento eliminado')
+    } catch {
+      showToast('Error al eliminar el evento')
+    }
+  }
 
   const switchTab = (id) => {
     setActiveTab(id)
@@ -348,10 +383,92 @@ export default function Dashboard() {
 
       {/* ── TAB: CATALIZADORES ── */}
       <div className={`tab-content ${activeTab === 'catalizadores' ? 'active' : ''}`}>
-        <div className="sec-title" style={{ marginTop: 8 }}>Próximos eventos</div>
-        <div className="timeline">
-          {catalizadores.map((cat, i) => <CatalystItem key={i} catalyst={cat} />)}
+
+        <div className="cat-header">
+          <div className="sec-title" style={{ margin: 0 }}>Próximos eventos</div>
+          {!isDemo && (
+            <button className="cat-add-btn" onClick={() => setShowCatForm(v => !v)}>
+              {showCatForm ? '✕ Cancelar' : '+ Agregar'}
+            </button>
+          )}
         </div>
+
+        {/* Formulario inline para agregar catalizador */}
+        {showCatForm && !isDemo && (
+          <form className="cat-form" onSubmit={handleAddCatalyst}>
+            <div className="cat-form-row">
+              <input
+                className="cat-input" type="date" required
+                value={catForm.fecha}
+                onChange={e => setCatForm(f => ({ ...f, fecha: e.target.value }))}
+              />
+              <select
+                className="cat-input"
+                value={catForm.urgencia}
+                onChange={e => setCatForm(f => ({ ...f, urgencia: e.target.value }))}
+              >
+                <option value="urgente">Urgente</option>
+                <option value="cercano">Próximo</option>
+                <option value="estructural">Estructural</option>
+                <option value="lejano">Largo plazo</option>
+              </select>
+              <select
+                className="cat-input"
+                value={catForm.tipo}
+                onChange={e => setCatForm(f => ({ ...f, tipo: e.target.value }))}
+              >
+                <option value="earnings">Earnings</option>
+                <option value="evento_macro">Macro</option>
+                <option value="rti_tarifario">Regulatorio</option>
+                <option value="vencimiento">Vencimiento</option>
+                <option value="dividendo">Dividendo</option>
+                <option value="otro">Otro</option>
+              </select>
+            </div>
+            <input
+              className="cat-input cat-input-full" type="text" required
+              placeholder="Nombre del evento"
+              value={catForm.evento}
+              onChange={e => setCatForm(f => ({ ...f, evento: e.target.value }))}
+            />
+            <input
+              className="cat-input cat-input-full" type="text"
+              placeholder="Tickers afectados (separados por coma: ALUA, MELI)"
+              value={catForm.tickers}
+              onChange={e => setCatForm(f => ({ ...f, tickers: e.target.value }))}
+            />
+            <textarea
+              className="cat-input cat-input-full cat-textarea"
+              placeholder="Descripción (opcional)"
+              rows={2}
+              value={catForm.descripcion}
+              onChange={e => setCatForm(f => ({ ...f, descripcion: e.target.value }))}
+            />
+            <button className="cat-submit-btn" type="submit">Guardar evento</button>
+          </form>
+        )}
+
+        {/* Timeline */}
+        {catalizadores.length === 0 ? (
+          <div className="cat-empty">
+            {isDemo
+              ? 'Modo demo — los eventos reales aparecen al iniciar sesión'
+              : 'No hay eventos cargados. Usá "+ Agregar" para registrar earnings, vencimientos, etc.'}
+          </div>
+        ) : (
+          <div className="timeline">
+            {[...catalizadores]
+              .sort((a, b) => a.fecha.localeCompare(b.fecha))
+              .map((cat, i) => (
+                <CatalystItem
+                  key={i}
+                  catalyst={cat}
+                  onDelete={!isDemo ? handleDeleteCatalyst : undefined}
+                />
+              ))
+            }
+          </div>
+        )}
       </div>
 
       {/* ── TAB: GRÁFICOS ── */}

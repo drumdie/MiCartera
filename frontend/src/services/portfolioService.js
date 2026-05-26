@@ -69,3 +69,17 @@ export async function deletePosicion(uid, categoria, posicion) {
   const ref = doc(db, 'users', uid, 'portfolio', categoria)
   await updateDoc(ref, { posiciones: arrayRemove(posicion) })
 }
+
+// ── Catalizadores ──────────────────────────────────────────────────────────
+
+export async function addCatalyst(uid, catalyst) {
+  const ref  = doc(db, 'users', uid, 'catalysts', 'data')
+  const snap = await getDoc(ref)
+  const proximos = snap.exists() ? (snap.data().proximos ?? []) : []
+  await setDoc(ref, { proximos: [...proximos, catalyst] }, { merge: true })
+}
+
+export async function deleteCatalyst(uid, catalyst) {
+  const ref = doc(db, 'users', uid, 'catalysts', 'data')
+  await updateDoc(ref, { proximos: arrayRemove(catalyst) })
+}

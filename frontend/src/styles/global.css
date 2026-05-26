@@ -217,11 +217,27 @@ body::before {
 .tl-dot.far       { background: var(--muted); }
 .tl-dot.structural{ background: var(--hold); }
 .tl-card { background: var(--surface); border: 1px solid var(--border); border-radius: 10px; padding: 12px 14px; }
-.tl-date { font-size: 9px; color: var(--muted); text-transform: uppercase; letter-spacing: .1em; margin-bottom: 4px; }
+.tl-card-top { display: flex; justify-content: space-between; align-items: center; margin-bottom: 4px; }
+.tl-date { font-size: 9px; color: var(--muted); text-transform: uppercase; letter-spacing: .1em; }
+.tl-del-btn { background: none; border: none; color: var(--muted); font-size: 14px; cursor: pointer; padding: 0 2px; line-height: 1; transition: color .15s; }
+.tl-del-btn:hover { color: var(--red); }
 .tl-evento { font-size: 12px; color: var(--text); font-weight: 500; margin-bottom: 6px; line-height: 1.4; }
 .tl-tickers { display: flex; flex-wrap: wrap; gap: 4px; }
 .tl-chip { font-size: 9px; font-family: 'Syne', sans-serif; font-weight: 700; padding: 2px 7px; border-radius: 99px; background: rgba(74,158,255,.08); border: 1px solid rgba(74,158,255,.18); color: var(--accent3); }
 .tl-desc { font-size: 10px; color: var(--muted2); margin-top: 6px; line-height: 1.5; }
+/* ── Catalizadores — header + form ── */
+.cat-header { display: flex; justify-content: space-between; align-items: center; margin: 8px 0 12px; }
+.cat-add-btn { font-size: 11px; font-weight: 600; background: rgba(0,229,160,.08); border: 1px solid rgba(0,229,160,.2); color: var(--accent); border-radius: 7px; padding: 5px 12px; cursor: pointer; transition: background .15s; }
+.cat-add-btn:hover { background: rgba(0,229,160,.15); }
+.cat-form { background: var(--surface); border: 1px solid var(--border); border-radius: 10px; padding: 14px; margin-bottom: 16px; display: flex; flex-direction: column; gap: 8px; }
+.cat-form-row { display: flex; gap: 8px; flex-wrap: wrap; }
+.cat-input { background: var(--bg); border: 1px solid var(--border); border-radius: 6px; padding: 7px 10px; font-size: 11px; color: var(--text); outline: none; min-width: 0; }
+.cat-input:focus { border-color: var(--accent); }
+.cat-input-full { width: 100%; box-sizing: border-box; }
+.cat-textarea { resize: vertical; font-family: inherit; }
+.cat-submit-btn { align-self: flex-end; background: var(--accent); color: #000; border: none; border-radius: 7px; padding: 7px 18px; font-size: 11px; font-weight: 700; cursor: pointer; transition: opacity .15s; }
+.cat-submit-btn:hover { opacity: .85; }
+.cat-empty { text-align: center; color: var(--muted); font-size: 11px; padding: 40px 16px; line-height: 1.6; }
 
 /* ── GRÁFICOS ── */
 .chart-selector { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 16px; }
