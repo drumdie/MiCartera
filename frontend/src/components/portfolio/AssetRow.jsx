@@ -4,13 +4,15 @@ import { formatARS, formatARSPrice, formatUSD, formatPctShort } from '../../util
 import PrivacyMask from '../ui/PrivacyMask'
 import TacticalBadge, { tacticalBarClass } from './TacticalBadge'
 
-export default function AssetRow({ position, expanded, onToggle, isCedear, isBono, isON, isFCI }) {
+export default function AssetRow({ position, expanded, onToggle, isCedear, isBono, isON, isFCI, isStale = false }) {
   const { activeCurrency, getRend, convert, convertPrice, curLabel } = useCurrency()
   const barCls    = tacticalBarClass(position.accion_tactica)
   const isMEPmode = activeCurrency === 'MEP' || activeCurrency === 'CCL'
 
   // Rendimiento del día → tr-mid (siempre visible)
-  const rendDia  = position.rend_dia_pct ?? null
+  // Cuando is_stale (mercado cerrado), el rend_dia_pct guardado es del último día de ronda
+  // → mostrar "—" para no confundir con datos del día actual
+  const rendDia  = isStale ? null : (position.rend_dia_pct ?? null)
   const isDiaPos = rendDia == null || rendDia >= 0
 
   // Rendimiento histórico desde compra → panel expandido, sigue toggle de moneda
@@ -130,8 +132,8 @@ export default function AssetRow({ position, expanded, onToggle, isCedear, isBon
             </div>
           )}
 
-          {/* Rendimiento del día */}
-          {position.rend_dia_pct != null && (
+          {/* Rendimiento del día — solo cuando el mercado está abierto */}
+          {!isStale && position.rend_dia_pct != null && (
             <div>
               <div className="tg-label">Rend. Día</div>
               <div className={`tg-val ${position.rend_dia_pct >= 0 ? 'pos' : 'neg'}`}>

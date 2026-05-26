@@ -76,7 +76,7 @@ function computeResumen(portfolio) {
   const totalCostoARS    = cats.reduce((s, c) => s + (c.costo_total_ars  ?? 0), 0)
 
   // null cuando no hay costo de compra (primer sync sin avg_costs calculados)
-  const rendARS = totalCostoARS > 0
+  const rawRendARS = totalCostoARS > 0
     ? parseFloat((totalGananciaARS / totalCostoARS * 100).toFixed(2))
     : null
 
@@ -84,9 +84,19 @@ function computeResumen(portfolio) {
   // Nota: con el proxy de MEP constante esto es equivalente a rendARS en %.
   // La diferencia ARS vs USD solo aparece con retornos históricos (feature futuro).
   const totalCostoUSD = dolar_mep > 0 ? totalCostoARS / dolar_mep : 0
-  const rendUSD = totalCostoUSD > 0
+  const rawRendUSD = totalCostoUSD > 0
     ? parseFloat((totalGananciaUSD / totalCostoUSD * 100).toFixed(2))
     : null
+
+  // Sanidad: si el rendimiento es < −99%, los datos en Firestore son de una versión
+  // anterior al fix de doble conversión (avg_cost_ars × MEP para bonos/ONs → costo
+  // astronómico → ganancia ≈ −100%). Mostrar null → "N/D" hasta el próximo sync.
+  const rendARS = (rawRendARS != null && rawRendARS > -99) ? rawRendARS : null
+  const rendUSD = (rawRendUSD != null && rawRendUSD > -99) ? rawRendUSD : null
+
+  // Si el % es inválido, la ganancia absoluta también lo es
+  const gananciaARSClean = rendARS !== null ? totalGananciaARS : null
+  const gananciaUSDClean = rendUSD !== null ? totalGananciaUSD : null
 
   return {
     valor_total_ars: total,
@@ -98,8 +108,8 @@ function computeResumen(portfolio) {
       fci:         portfolio.fci.pct_cartera,
       liquidez:    portfolio.liquidez.pct_cartera,
     },
-    ganancia_total_ars:     totalGananciaARS,
-    ganancia_total_usd:     totalGananciaUSD,
+    ganancia_total_ars:     gananciaARSClean,
+    ganancia_total_usd:     gananciaUSDClean,
     costo_total_ars:        totalCostoARS,
     rend_total_ars_pct:     rendARS,
     rend_total_usd_mep_pct: rendUSD,

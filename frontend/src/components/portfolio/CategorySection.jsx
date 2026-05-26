@@ -35,6 +35,7 @@ export default function CategorySection({ title, category, isCedear, isBono, isO
             isBono={isBono}
             isON={isON}
             isFCI={isFCI}
+            isStale={category?.is_stale ?? false}
           />
         ))}
       </div>
