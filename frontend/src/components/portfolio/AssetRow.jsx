@@ -6,10 +6,16 @@ import TacticalBadge, { tacticalBarClass } from './TacticalBadge'
 
 export default function AssetRow({ position, expanded, onToggle, isCedear, isBono, isON, isFCI }) {
   const { activeCurrency, getRend, convert, convertPrice, curLabel } = useCurrency()
-  const rend      = getRend(position)
-  const isPos     = rend >= 0
   const barCls    = tacticalBarClass(position.accion_tactica)
   const isMEPmode = activeCurrency === 'MEP' || activeCurrency === 'CCL'
+
+  // Rendimiento del día → tr-mid (siempre visible)
+  const rendDia  = position.rend_dia_pct ?? null
+  const isDiaPos = rendDia == null || rendDia >= 0
+
+  // Rendimiento histórico desde compra → panel expandido, sigue toggle de moneda
+  const rendHist      = getRend(position)
+  const rendHistLabel = isMEPmode ? 'Rend. Histórico USD' : 'Rend. Histórico ARS'
 
   // Ganancia/pérdida absoluta en la moneda activa
   const ganancia = isMEPmode
@@ -29,8 +35,8 @@ export default function AssetRow({ position, expanded, onToggle, isCedear, isBon
           </div>
         </div>
         <div className="tr-mid">
-          <div className={`tr-rend ${isPos ? 'pos' : 'neg'}`}>
-            {formatPctShort(rend)}
+          <div className={`tr-rend ${isDiaPos ? 'pos' : 'neg'}`}>
+            {formatPctShort(rendDia)}
           </div>
         </div>
         <div className="tr-right">
@@ -134,20 +140,15 @@ export default function AssetRow({ position, expanded, onToggle, isCedear, isBon
             </div>
           )}
 
-          {/* Rendimiento histórico: USD para instrumentos dolarizados, ARS para el resto */}
-          {(() => {
-            const isUsdInstrument = isCedear || isBono || isON
-            const rendHist = isUsdInstrument ? position.rend_usd_pct : position.rend_ars_pct
-            if (rendHist == null) return null
-            return (
-              <div>
-                <div className="tg-label">Rend. Histórico{isUsdInstrument ? ' USD' : ' ARS'}</div>
-                <div className={`tg-val ${rendHist >= 0 ? 'pos' : 'neg'}`}>
-                  {formatPctShort(rendHist)}
-                </div>
+          {/* Rendimiento histórico: sigue toggle de moneda activa */}
+          {rendHist != null && (
+            <div>
+              <div className="tg-label">{rendHistLabel}</div>
+              <div className={`tg-val ${rendHist >= 0 ? 'pos' : 'neg'}`}>
+                {formatPctShort(rendHist)}
               </div>
-            )
-          })()}
+            </div>
+          )}
         </div>
 
         {position.tesis_corta && (

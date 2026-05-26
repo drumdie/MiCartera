@@ -159,7 +159,9 @@ def _transform_position(
         "ganancia_ars":        ganancia_ars,
         "ganancia_usd_mep":    ganancia_usd_mep,
         "rend_dia_pct":        rend_dia_pct,
-        "rend_usd_pct":        rend_usd_pct,
+        # rend_usd_pct: solo se calcula para instrumentos USD o CEDEARs (proxy ARS).
+        # Para acciones ARS se guarda null → el frontend cae al rend_ars_pct como proxy.
+        "rend_usd_pct":        rend_usd_pct if (is_usd or categoria == "cedears") else None,
         "rend_ars_pct":        rend_ars_pct,
     }
 
