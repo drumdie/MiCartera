@@ -84,6 +84,34 @@ def _q_debt_ebitda(v: float | None) -> str:
 
 
 # ---------------------------------------------------------------------------
+# Mapeo exchange yfinance → prefijo TradingView
+# ---------------------------------------------------------------------------
+
+_YF_TO_TV: dict[str, str] = {
+    # NASDAQ (distintas sub-bolsas)
+    "NMS": "NASDAQ", "NGM": "NASDAQ", "NCM": "NASDAQ",
+    # NYSE
+    "NYQ": "NYSE", "NYS": "NYSE",
+    # NYSE Arca (ETFs)
+    "PCX": "NYSE",
+    # AMEX / NYSE American
+    "ASE": "AMEX",
+    # Buenos Aires (stocks .BA en yfinance)
+    "BUE": "BCBA",
+}
+
+
+def _tv_symbol(info: dict, ticker: str, categoria: str, subyacente: str | None) -> str:
+    """Devuelve el símbolo en formato TradingView (p.ej. NASDAQ:MELI, BCBA:ALUA)."""
+    if categoria == "accion_ar":
+        return f"BCBA:{ticker}"
+    exch   = info.get("exchange", "")
+    prefix = _YF_TO_TV.get(exch, "")
+    sym    = subyacente or ticker
+    return f"{prefix}:{sym}" if prefix else sym
+
+
+# ---------------------------------------------------------------------------
 # yfinance (sync, corre en thread pool)
 # ---------------------------------------------------------------------------
 
@@ -140,6 +168,7 @@ def _build_fundamental(info: dict, ticker: str, descripcion: str, categoria: str
         "categoria":     categoria,
         "subyacente_usd": subyacente,
         "yf_ticker":     yf_ticker,
+        "tv_symbol":     _tv_symbol(info, ticker, categoria, subyacente),
         "market_cap":    _fmt_usd(info.get("marketCap")),
         # Métricas clave
         "ebitda_ttm":        _fmt_usd(ebitda),

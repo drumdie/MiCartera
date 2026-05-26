@@ -184,16 +184,24 @@ body::before {
 .fc-ratio { min-width: 60px; }
 .fc-ratio-label { font-size: 8px; color: var(--muted); text-transform: uppercase; letter-spacing: .06em; }
 .fc-ratio-val { font-family: 'IBM Plex Mono', monospace; font-size: 11px; font-weight: 500; color: var(--text); margin-top: 1px; }
-.fc-ratio-val.good { color: var(--buy); }
-.fc-ratio-val.bad  { color: var(--red); }
-.fc-ratio-val.mid  { color: var(--warn); }
+.fc-ratio-val.good   { color: var(--buy); }
+.fc-ratio-val.bad    { color: var(--red); }
+.fc-ratio-val.mid    { color: var(--warn); }
+/* aliases del backend (good/warn/danger) */
+.fc-ratio-val.warn   { color: var(--warn); }
+.fc-ratio-val.danger { color: var(--red); }
+.fc-ratio-val.neutral { color: var(--muted); }
 .fc-tesis { font-size: 10px; color: var(--muted2); line-height: 1.6; margin-bottom: 8px; }
-.fc-scenarios { display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; border-top: 1px solid var(--border); padding-top: 8px; }
+.fc-scenarios { display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; border-top: 1px solid var(--border); padding-top: 8px; margin-bottom: 10px; }
 .fc-sce-label { font-size: 8px; color: var(--muted); text-transform: uppercase; letter-spacing: .06em; text-align: center; }
 .fc-sce-val { font-family: 'IBM Plex Mono', monospace; font-size: 11px; font-weight: 500; margin-top: 2px; text-align: center; }
 .fc-sce-val.bear { color: var(--red); }
 .fc-sce-val.base { color: var(--warn); }
 .fc-sce-val.bull { color: var(--buy); }
+/* Botón TradingView dentro de FundCard */
+.fc-tv-btn { display: flex; align-items: center; gap: 6px; width: 100%; background: rgba(255,255,255,.04); border: 1px solid var(--border); border-radius: 7px; padding: 7px 10px; font-size: 10px; color: var(--muted2); cursor: pointer; transition: background .15s; margin-top: 4px; }
+.fc-tv-btn:hover { background: rgba(255,255,255,.08); color: var(--text); }
+.fc-tv-wrap { margin-top: 8px; border-radius: 8px; overflow: hidden; }
 
 /* ── TIMELINE ── */
 .timeline { position: relative; padding-left: 24px; margin-bottom: 24px; }
