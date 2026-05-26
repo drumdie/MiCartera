@@ -187,14 +187,36 @@ export const MOCK_CATALIZADORES = [
 
 export const MOCK_STRESS_TEST = [
   {
-    nombre: 'Riesgo local −30%', tipo: 'danger',
-    descripcion: 'Acciones AR y CEDEARs locales caen. Bonos USD amortiguan.',
-    impacto_cartera_pct: -12,
+    nombre: 'MERVAL cae 30%', tipo: 'danger',
+    supuesto: 'Shock de confianza: MERVAL cede 30% en ARS',
+    descripcion: 'Corrección bursátil local del 30%. Impacto directo en acciones argentinas; CEDEARs y bonos amortiguan.',
+    impacto_cartera_pct: -12.0,
+    tickers_mas_afectados: ['TKRA', 'TKRC'],
+    amortiguadores: ['Bonos', 'ONs', 'Liquidez'],
   },
   {
-    nombre: 'S&P 500 −15%', tipo: 'warn',
-    descripcion: 'CEDEARs expuestos. ETFs y defensivos amortiguan la caída.',
-    impacto_cartera_pct: -4.5,
+    nombre: 'Shock externo (S&P −20%)', tipo: 'warn',
+    supuesto: 'Recesión en EEUU: S&P500 cae 20% en USD',
+    descripcion: 'Corrección global del 20%. CEDEARs impacto directo; acciones locales con correlación menor.',
+    impacto_cartera_pct: -7.2,
+    tickers_mas_afectados: ['CEDR1', 'CEDR2'],
+    amortiguadores: ['Liquidez', 'Bonos soberanos AR'],
+  },
+  {
+    nombre: 'Brecha cambiaria +20%', tipo: 'warn',
+    supuesto: 'Brecha cambiaria sube 20 pp respecto al nivel actual',
+    descripcion: 'MEP y CCL suben 20%. Posiciones en ARS valen menos en USD; activos dolarizados se protegen.',
+    impacto_cartera_pct: -4.8,
+    tickers_mas_afectados: ['TKRA', 'TKRD'],
+    amortiguadores: ['CEDEARs', 'ONs USD', 'Bonos Hard-Dollar'],
+  },
+  {
+    nombre: 'Riesgo País +500 pb', tipo: 'danger',
+    supuesto: 'Crisis de confianza soberana; EMBI+ Argentina sube 500 pb',
+    descripcion: 'El riesgo país sube 500 puntos básicos. Impacta directamente en la paridad de bonos soberanos.',
+    impacto_cartera_pct: -9.1,
+    tickers_mas_afectados: ['TKRB', 'CEDR3'],
+    amortiguadores: ['Liquidez', 'CEDEARs'],
   },
 ]
 
@@ -204,7 +226,7 @@ export const MOCK_FUNDAMENTAL = [
     posiciones: [
       {
         ticker: 'TKRA', descripcion: 'Empresa A · 20 acc. · +55% USD · 18,00% cartera',
-        accion_tactica: 'tomar_parcial', sentimiento: 'bull',
+        accion_tactica: 'tomar_parcial', sentimiento: 'positivo',
         ebitda_ttm: 'USD 4,5B', ev_ebitda: '4,2x', ev_ebitda_quality: 'good', mg_ebitda: '36%',
         ratios: [
           { label: 'P/E', value: '7,1x', quality: 'good' },
@@ -232,7 +254,7 @@ export const MOCK_FUNDAMENTAL = [
     posiciones: [
       {
         ticker: 'CEDR2', descripcion: 'CEDEAR Tech · 25 cert. · +40% USD',
-        accion_tactica: 'tomar_parcial', sentimiento: 'bull',
+        accion_tactica: 'tomar_parcial', sentimiento: 'positivo',
         ebitda_ttm: 'USD 120B', ev_ebitda: '42x', ev_ebitda_quality: 'bad', mg_ebitda: '60%',
         ratios: [
           { label: 'P/E fwd', value: '28x', quality: 'mid' },
