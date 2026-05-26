@@ -1,7 +1,7 @@
 import {
   collection, doc,
   onSnapshot, getDoc,
-  setDoc, updateDoc, arrayRemove,
+  setDoc, updateDoc, arrayRemove, getDocs,
 } from 'firebase/firestore'
 import { db } from './firebase'
 
@@ -35,6 +35,16 @@ export function onSnapshotCatalysts(uid, callback) {
 export function onSnapshotPortfolioHistory(uid, callback) {
   return onSnapshot(doc(db, 'users', uid, 'meta', 'portfolio_history'), (snap) => {
     callback(snap.exists() ? snap.data() : {})
+  })
+}
+
+// Fundamentales: colección /users/{uid}/fundamentals/{ticker}
+// Cada doc tiene métricas de yfinance + análisis Claude (tesis, escenarios, accion_tactica)
+export function onSnapshotFundamentals(uid, callback) {
+  return onSnapshot(collection(db, 'users', uid, 'fundamentals'), (snap) => {
+    const data = {}
+    snap.forEach(d => { data[d.id] = d.data() })
+    callback(data)
   })
 }
 

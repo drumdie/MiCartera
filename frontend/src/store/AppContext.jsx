@@ -7,7 +7,7 @@ import {
 } from '../data/mockPortfolio'
 import { useAuth }      from '../hooks/useAuth'
 import { usePortfolio } from '../hooks/usePortfolio'
-import { apiPost }      from '../services/apiClient'
+import { apiPost, apiGet } from '../services/apiClient'
 
 export const AppContext = createContext(null)
 
@@ -74,6 +74,17 @@ export function AppProvider({ children }) {
   const stressTest   = isDemo ? MOCK_STRESS_TEST  : fsStressTest
   const fundamental  = isDemo ? MOCK_FUNDAMENTAL  : (fsFundamental  ?? [])
 
+  const refreshFundamentals = useCallback(async () => {
+    if (!user) return
+    try {
+      const result = await apiPost('/api/fundamentals/refresh')
+      return result
+    } catch (err) {
+      console.error('Error actualizando fundamentales:', err)
+      throw err
+    }
+  }, [user])
+
   const syncPPI = useCallback(async () => {
     if (!user) return
     setSyncing(true)
@@ -114,6 +125,7 @@ export function AppProvider({ children }) {
       portfolio, cotizaciones, resumen,
       catalizadores, stressTest, fundamental,
       syncPPI, syncing, syncError, lastSync,
+      refreshFundamentals,
       isStale: !isDemo && (fsIsStale ?? false),
       ultimaSync: !isDemo ? (fsUltimaSync ?? null) : null,
       rend30d: !isDemo ? (fsRend30d ?? null) : null,

@@ -3,6 +3,7 @@ import { useApp } from '../store/AppContext'
 import { usePrivacy } from '../hooks/usePrivacy'
 import { formatARS, formatUSD } from '../utils/formatters'
 import { TICKERS_TV } from '../data/mockPortfolio'
+import { apiPost } from '../services/apiClient'
 
 import Header          from '../components/layout/Header'
 import CurrencyToggle  from '../components/layout/CurrencyToggle'
@@ -41,17 +42,49 @@ export default function Dashboard() {
   const { activeCurrency, distMode, setDistMode,
           cotizaciones, resumen, portfolio,
           catalizadores, stressTest, fundamental,
-          lastSync, rend30d } = useApp()
+          lastSync, rend30d,
+          refreshFundamentals } = useApp()
   const { privacyOn, toggle: togglePrivacy } = usePrivacy()
 
-  const [activeTab,      setActiveTab]      = useState('posiciones')
-  const [selectedTicker, setSelectedTicker] = useState(null)
-  const [modalOpen,      setModalOpen]      = useState(false)
-  const [toastMsg,       setToastMsg]       = useState('')
+  const [activeTab,        setActiveTab]        = useState('posiciones')
+  const [selectedTicker,   setSelectedTicker]   = useState(null)
+  const [modalOpen,        setModalOpen]        = useState(false)
+  const [toastMsg,         setToastMsg]         = useState('')
+  const [fundRefreshing,   setFundRefreshing]   = useState(false)
 
   const showToast = (msg) => {
     setToastMsg(msg)
     setTimeout(() => setToastMsg(''), 2500)
+  }
+
+  const handleRefreshFundamentals = async () => {
+    setFundRefreshing(true)
+    try {
+      const result = await refreshFundamentals()
+      showToast(`✓ Fundamentales actualizados (${result?.tickers_actualizados ?? 0} tickers)`)
+    } catch {
+      showToast('Error al actualizar fundamentales')
+    } finally {
+      setFundRefreshing(false)
+    }
+  }
+
+  // Guarda el análisis Claude (JSON pegado) en Firestore ticker por ticker
+  const handleFundAnalysisLoad = async (jsonStr) => {
+    try {
+      const parsed = JSON.parse(jsonStr)
+      const analisis = parsed.analisis ?? (Array.isArray(parsed) ? parsed : [parsed])
+      let ok = 0
+      for (const item of analisis) {
+        const { ticker, ...rest } = item
+        if (!ticker) continue
+        await apiPost(`/api/fundamentals/${ticker}/analysis`, rest)
+        ok++
+      }
+      showToast(`✓ Análisis cargado (${ok} tickers)`)
+    } catch (err) {
+      showToast(`Error al cargar análisis: ${err.message}`)
+    }
   }
 
   // Mostrar toast cuando se completa una sincronización con PPI
@@ -230,26 +263,49 @@ export default function Dashboard() {
 
       {/* ── TAB: FUNDAMENTAL ── */}
       <div className={`tab-content ${activeTab === 'fundamental' ? 'active' : ''}`}>
-        {fundamental.map(sector => (
-          <div key={sector.sector}>
-            <div className="sec-title" style={{ marginTop: 8 }}>{sector.sector}</div>
-            <div className="fund-grid">
-              {sector.posiciones.map(pos => <FundCard key={pos.ticker} position={pos} />)}
-            </div>
-          </div>
-        ))}
-        <div className="sec-title" style={{ marginTop: 20 }}>Herramientas Claude</div>
-        <div className="action-btns">
-          <CopyContextBtn tipo="fundamental" onToast={showToast} />
-          <PasteResultArea id="paste-fund" label="Pegar resultado fundamental" sub="Cargá el JSON de Claude" onLoad={() => showToast('✓ Análisis cargado')} />
-          <button className="action-btn deep-btn" onClick={() => setModalOpen(true)}>
-            <span className="ab-icon">📖</span>
+
+        {/* Botón actualizar métricas yfinance */}
+        <div className="action-btns fade-in" style={{ marginTop: 12 }}>
+          <button
+            className="action-btn"
+            onClick={handleRefreshFundamentals}
+            disabled={fundRefreshing}
+          >
+            <span className="ab-icon">{fundRefreshing ? '⏳' : '📊'}</span>
             <div className="ab-text">
-              <div className="ab-title">Ver análisis profundo</div>
-              <div className="ab-sub">Análisis completo — todos los tickers</div>
+              <div className="ab-title">{fundRefreshing ? 'Actualizando…' : 'Actualizar fundamentales'}</div>
+              <div className="ab-sub">Fetcha P/E, EV/EBITDA, márgenes desde Yahoo Finance</div>
             </div>
             <span className="ab-arrow">→</span>
           </button>
+        </div>
+
+        {/* Cards por sector — solo si hay datos */}
+        {fundamental.length === 0 ? (
+          <div style={{ textAlign: 'center', color: 'var(--text-muted, #888)', padding: '40px 16px' }}>
+            Sin datos fundamentales. Presioná "Actualizar fundamentales" para cargar métricas reales.
+          </div>
+        ) : (
+          fundamental.map(sector => (
+            <div key={sector.sector}>
+              <div className="sec-title" style={{ marginTop: 16 }}>{sector.sector}</div>
+              <div className="fund-grid">
+                {sector.posiciones.map(pos => <FundCard key={pos.ticker} position={pos} />)}
+              </div>
+            </div>
+          ))
+        )}
+
+        {/* Herramientas Claude */}
+        <div className="sec-title" style={{ marginTop: 20 }}>Análisis Claude</div>
+        <div className="action-btns">
+          <CopyContextBtn tipo="fundamental" onToast={showToast} />
+          <PasteResultArea
+            id="paste-fund"
+            label="Pegar análisis fundamental"
+            sub="Pegá el JSON de Claude — guarda tesis, escenarios y acción táctica"
+            onLoad={handleFundAnalysisLoad}
+          />
         </div>
       </div>
 

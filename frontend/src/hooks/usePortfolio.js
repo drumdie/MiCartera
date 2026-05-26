@@ -5,6 +5,7 @@ import {
   onSnapshotCotizaciones,
   onSnapshotCatalysts,
   onSnapshotPortfolioHistory,
+  onSnapshotFundamentals,
 } from '../services/portfolioService'
 import { apiGet } from '../services/apiClient'
 
@@ -133,6 +134,7 @@ export function usePortfolio(uid) {
   const [catalizadores,     setCatalizadores]     = useState([])
   const [stressTest,        setStressTest]        = useState(MOCK_STRESS_TEST)
   const [portfolioHistory,  setPortfolioHistory]  = useState({})
+  const [rawFundamentals,   setRawFundamentals]   = useState({})
   const [loading,           setLoading]           = useState(true)
 
   // Suscripciones Firestore
@@ -158,6 +160,11 @@ export function usePortfolio(uid) {
   useEffect(() => {
     if (!uid) return
     return onSnapshotPortfolioHistory(uid, setPortfolioHistory)
+  }, [uid])
+
+  useEffect(() => {
+    if (!uid) return
+    return onSnapshotFundamentals(uid, setRawFundamentals)
   }, [uid])
 
   // Stress test desde el backend — se puede refrescar manualmente con refreshStress()
@@ -226,6 +233,23 @@ export function usePortfolio(uid) {
     }
   }, [portfolio, portfolioHistory])
 
+  // Fundamentales reales desde Firestore, agrupados por sector para la UI.
+  // Si no hay datos aún (pre-refresh) devuelve array vacío → tab muestra botón "Actualizar".
+  const fundamentalData = useMemo(() => {
+    const entries = Object.values(rawFundamentals)
+    if (entries.length === 0) return []
+
+    // Agrupar por sector (o categoria como fallback)
+    const bySector = {}
+    for (const fund of entries) {
+      const key = fund.sector || (fund.categoria === 'cedear' ? 'CEDEARs' : 'Acciones AR')
+      if (!bySector[key]) bySector[key] = []
+      bySector[key].push(fund)
+    }
+
+    return Object.entries(bySector).map(([sector, posiciones]) => ({ sector, posiciones }))
+  }, [rawFundamentals])
+
   // Leer is_stale y ultima_sync desde cualquier categoría del portfolio raw.
   // El backend escribe estos campos en cada doc; tomamos el más reciente.
   const { isStale, ultimaSync } = useMemo(() => {
@@ -247,7 +271,7 @@ export function usePortfolio(uid) {
     catalizadores,
     stressTest,
     refreshStress: fetchStress,
-    fundamental: MOCK_FUNDAMENTAL,
+    fundamental: fundamentalData,
     loading,
     isStale,
     ultimaSync,

@@ -31,14 +31,55 @@ export function buildTacticalContext(portfolio, cotizaciones, resumen) {
 }
 
 export function buildFundamentalContext(fundamental) {
-  const lines = ['# Análisis fundamental — MiCartera', '']
-  fundamental.forEach(sector => {
-    lines.push(`## ${sector.sector}`)
-    sector.posiciones.forEach(p => {
-      lines.push(`- ${p.ticker}: EV/EBITDA ${p.ev_ebitda} | tesis: ${p.tesis}`)
+  const lines = [
+    '# Análisis fundamental — MiCartera',
+    `Fecha: ${new Date().toLocaleDateString('es-AR')}`,
+    '',
+    'Analizá cada posición con los datos disponibles y devolvé un JSON con el siguiente esquema exacto:',
+    '',
+    '```json',
+    '{',
+    '  "analisis": [',
+    '    {',
+    '      "ticker": "AAPL",',
+    '      "accion_tactica": "HOLD",',
+    '      "sentimiento": "positivo",',
+    '      "tesis": "Párrafo corto explicando la tesis de inversión.",',
+    '      "escenarios": {',
+    '        "bear": "Descripción breve del escenario bajista.",',
+    '        "base": "Descripción breve del escenario base.",',
+    '        "bull": "Descripción breve del escenario alcista."',
+    '      }',
+    '    }',
+    '  ]',
+    '}',
+    '```',
+    '',
+    'accion_tactica: "comprar" | "mantener" | "tomar_parcial" | "vender"',
+    'sentimiento: "positivo" | "neutral" | "negativo"',
+    '',
+    '## Posiciones',
+    '',
+  ]
+
+  const allPositions = fundamental.flatMap(s => s.posiciones ?? [])
+  if (allPositions.length === 0) {
+    lines.push('(Sin datos fundamentales aún — ejecutá "Actualizar fundamentales" primero)')
+  } else {
+    allPositions.forEach(p => {
+      lines.push(`### ${p.ticker} — ${p.descripcion || ''}`)
+      if (p.sector)    lines.push(`Sector: ${p.sector}`)
+      if (p.market_cap) lines.push(`Market Cap: ${p.market_cap}`)
+      if (p.ebitda_ttm) lines.push(`EBITDA TTM: ${p.ebitda_ttm}`)
+      if (p.ev_ebitda)  lines.push(`EV/EBITDA: ${p.ev_ebitda}`)
+      if (p.mg_ebitda)  lines.push(`Mg. EBITDA: ${p.mg_ebitda}`)
+      if (p.ratios?.length) {
+        p.ratios.forEach(r => lines.push(`${r.label}: ${r.value}`))
+      }
+      if (p.tesis) lines.push(`Tesis actual: ${p.tesis}`)
+      lines.push('')
     })
-    lines.push('')
-  })
-  lines.push('Actualizá los escenarios de precio y ratios en formato JSON.')
+  }
+
   return lines.join('\n')
 }

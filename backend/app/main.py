@@ -4,7 +4,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from app.core.config import settings
 from app.core.firebase_admin_init import init_firebase
 from app.middleware.auth import FirebaseAuthMiddleware
-from app.routers import portfolio, prices, stress
+from app.routers import portfolio, prices, stress, fundamentals
 
 init_firebase()
 
@@ -34,3 +34,4 @@ def health():
 app.include_router(portfolio.router)
 app.include_router(prices.router)
 app.include_router(stress.router)
+app.include_router(fundamentals.router)
