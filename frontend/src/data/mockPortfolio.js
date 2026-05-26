@@ -226,7 +226,7 @@ export const MOCK_FUNDAMENTAL = [
     posiciones: [
       {
         ticker: 'TKRA', descripcion: 'Empresa A · 20 acc. · +55% USD · 18,00% cartera',
-        accion_tactica: 'tomar_parcial', sentimiento: 'positivo',
+        accion_tactica: 'tomar_parcial', sentimiento: 'bull',
         ebitda_ttm: 'USD 4,5B', ev_ebitda: '4,2x', ev_ebitda_quality: 'good', mg_ebitda: '36%',
         ratios: [
           { label: 'P/E', value: '7,1x', quality: 'good' },
@@ -254,7 +254,7 @@ export const MOCK_FUNDAMENTAL = [
     posiciones: [
       {
         ticker: 'CEDR2', descripcion: 'CEDEAR Tech · 25 cert. · +40% USD',
-        accion_tactica: 'tomar_parcial', sentimiento: 'positivo',
+        accion_tactica: 'tomar_parcial', sentimiento: 'bull',
         ebitda_ttm: 'USD 120B', ev_ebitda: '42x', ev_ebitda_quality: 'bad', mg_ebitda: '60%',
         ratios: [
           { label: 'P/E fwd', value: '28x', quality: 'mid' },

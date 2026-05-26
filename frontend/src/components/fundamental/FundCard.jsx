@@ -2,8 +2,12 @@ import { useState } from 'react'
 import TacticalBadge from '../portfolio/TacticalBadge'
 import TradingViewWidget from '../charts/TradingViewWidget'
 
-// Mapea el sentimiento de Claude al modificador CSS del fund-card
-const SENT_CLASS = { positivo: 'bull', negativo: 'bear', neutral: 'neutral' }
+// Acepta tanto los valores de Claude (positivo/negativo) como los alias cortos (bull/bear)
+const SENT_CLASS = {
+  positivo: 'bull', bull: 'bull',
+  negativo: 'bear', bear: 'bear',
+  neutral:  'neutral',
+}
 
 export default function FundCard({ position }) {
   const [showTV, setShowTV] = useState(false)
