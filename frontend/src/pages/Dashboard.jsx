@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useMemo } from 'react'
 import { useApp } from '../store/AppContext'
 import { usePrivacy } from '../hooks/usePrivacy'
 import { formatARS, formatUSD } from '../utils/formatters'
@@ -43,7 +43,7 @@ export default function Dashboard() {
           cotizaciones, resumen, portfolio,
           catalizadores, stressTest, fundamental,
           lastSync, rend30d,
-          refreshFundamentals } = useApp()
+          refreshFundamentals, isDemo } = useApp()
   const { privacyOn, toggle: togglePrivacy } = usePrivacy()
 
   const [activeTab,        setActiveTab]        = useState('posiciones')
@@ -149,6 +149,43 @@ export default function Dashboard() {
       default:    return formatARS(abs)
     }
   })() : null
+
+  // ── Tickers para Tab Gráficos ─────────────────────────────────────────────
+  // Demo → usa mock estático. Usuario real → construye desde portfolio + fundamentales.
+  // tv_symbol viene de Firestore fundamentals (si el usuario hizo refresh).
+  // Fallback: acciones_ar → BCBA:{ticker}, cedears → subyacente_usd directo.
+  const tickersTV = useMemo(() => {
+    if (isDemo) return TICKERS_TV
+
+    // Primero: tickers con tv_symbol en fundamentals (más preciso, incluye prefijo de exchange)
+    const fromFund = {}
+    for (const sector of fundamental) {
+      for (const pos of sector.posiciones ?? []) {
+        if (pos.ticker && pos.tv_symbol) {
+          fromFund[pos.ticker] = pos.tv_symbol
+        }
+      }
+    }
+
+    // Segundo: derivar del portfolio para los que no están en fundamentals
+    const result = { ...fromFund }
+
+    for (const pos of portfolio?.acciones_ar?.posiciones ?? []) {
+      if (pos.ticker && !result[pos.ticker]) {
+        result[pos.ticker] = `BCBA:${pos.ticker}`
+      }
+    }
+    for (const pos of portfolio?.cedears?.posiciones ?? []) {
+      if (pos.ticker && !result[pos.ticker]) {
+        // Subyacente sin prefijo → TradingView resuelve los tickers US conocidos
+        const sym = pos.subyacente_usd || pos.subyacente || pos.ticker
+        result[pos.ticker] = sym
+      }
+    }
+    // Bonos/ONs no tienen chart de equity — se omiten
+
+    return Object.keys(result).length > 0 ? result : TICKERS_TV
+  }, [isDemo, portfolio, fundamental])
 
   // ── KPIs ──────────────────────────────────────────────────────────────────
   const liqPct = portfolio?.liquidez?.pct_cartera    ?? 0
@@ -321,7 +358,7 @@ export default function Dashboard() {
       <div className={`tab-content ${activeTab === 'graficos' ? 'active' : ''}`}>
         <div className="sec-title" style={{ marginTop: 8 }}>Seleccioná un ticker</div>
         <div className="chart-selector">
-          {Object.keys(TICKERS_TV).map(ticker => (
+          {Object.keys(tickersTV).map(ticker => (
             <button
               key={ticker}
               className={`chart-ticker-btn ${selectedTicker === ticker ? 'active' : ''}`}
@@ -332,11 +369,15 @@ export default function Dashboard() {
           ))}
         </div>
         <div id="chart-content">
-          <TradingViewWidget symbol={selectedTicker ? TICKERS_TV[selectedTicker] : null} />
+          <TradingViewWidget symbol={selectedTicker ? tickersTV[selectedTicker] : null} />
         </div>
       </div>
 
-      <footer>Demo v5b · Datos de ejemplo — no reales · No constituye asesoramiento financiero</footer>
+      <footer>
+        {isDemo
+          ? 'Demo · Datos de ejemplo — no reales · No constituye asesoramiento financiero'
+          : 'MiCartera · Datos sincronizados desde PPI · No constituye asesoramiento financiero'}
+      </footer>
 
       {/* ── MODAL ANÁLISIS PROFUNDO ── */}
       <Modal

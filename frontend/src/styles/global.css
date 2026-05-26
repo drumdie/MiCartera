@@ -152,12 +152,16 @@ body::before {
 
 /* ── STRESS TEST ── */
 .stress-row { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin: 16px 0; }
-.stress-card { background: var(--surface); border: 1px solid var(--border); border-radius: 10px; padding: 14px; }
-.stress-card h4 { font-family: 'Syne', sans-serif; font-size: 11px; font-weight: 600; margin-bottom: 4px; }
-.stress-drop { font-family: 'IBM Plex Mono', monospace; font-size: 26px; font-weight: 600; line-height: 1; margin-bottom: 6px; }
+.stress-card { background: var(--surface); border: 1px solid var(--border); border-radius: 10px; padding: 14px; display: flex; flex-direction: column; gap: 4px; }
+.stress-card h4 { font-family: 'Syne', sans-serif; font-size: 11px; font-weight: 600; margin: 0; }
+.stress-drop { font-family: 'IBM Plex Mono', monospace; font-size: 26px; font-weight: 600; line-height: 1; margin-bottom: 2px; }
 .stress-card.danger .stress-drop { color: var(--red); }
 .stress-card.warn   .stress-drop { color: var(--warn); }
-.stress-desc { font-size: 9px; color: var(--muted2); line-height: 1.6; }
+.stress-supuesto { font-size: 8px; color: var(--accent); text-transform: uppercase; letter-spacing: .06em; line-height: 1.4; }
+.stress-desc { font-size: 9px; color: var(--muted2); line-height: 1.5; margin-top: 2px; }
+.stress-meta { display: flex; gap: 5px; align-items: baseline; flex-wrap: wrap; margin-top: 3px; }
+.stress-meta-label { font-size: 8px; color: var(--muted); white-space: nowrap; }
+.stress-meta-val { font-family: 'IBM Plex Mono', monospace; font-size: 9px; color: var(--text); }
 
 /* ── LIQUIDEZ ── */
 .liq-block { background: var(--surface2); border: 1px solid var(--border2); border-radius: 10px; padding: 16px; display: flex; align-items: center; gap: 16px; margin-bottom: 16px; }
