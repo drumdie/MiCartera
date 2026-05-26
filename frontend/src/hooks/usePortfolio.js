@@ -4,6 +4,7 @@ import {
   onSnapshotPortfolio,
   onSnapshotCotizaciones,
   onSnapshotCatalysts,
+  onSnapshotPortfolioHistory,
 } from '../services/portfolioService'
 import { apiGet } from '../services/apiClient'
 
@@ -127,11 +128,12 @@ function withTipo(escenario) {
 }
 
 export function usePortfolio(uid) {
-  const [rawPortfolio,  setRawPortfolio]  = useState(null)
-  const [cotizaciones,  setCotizaciones]  = useState(MOCK_COTIZACIONES)
-  const [catalizadores, setCatalizadores] = useState([])
-  const [stressTest,    setStressTest]    = useState(MOCK_STRESS_TEST)
-  const [loading,       setLoading]       = useState(true)
+  const [rawPortfolio,      setRawPortfolio]      = useState(null)
+  const [cotizaciones,      setCotizaciones]      = useState(MOCK_COTIZACIONES)
+  const [catalizadores,     setCatalizadores]     = useState([])
+  const [stressTest,        setStressTest]        = useState(MOCK_STRESS_TEST)
+  const [portfolioHistory,  setPortfolioHistory]  = useState({})
+  const [loading,           setLoading]           = useState(true)
 
   // Suscripciones Firestore
   useEffect(() => {
@@ -151,6 +153,11 @@ export function usePortfolio(uid) {
   useEffect(() => {
     if (!uid) return
     return onSnapshotCatalysts(uid, setCatalizadores)
+  }, [uid])
+
+  useEffect(() => {
+    if (!uid) return
+    return onSnapshotPortfolioHistory(uid, setPortfolioHistory)
   }, [uid])
 
   // Stress test desde el backend — se puede refrescar manualmente con refreshStress()
@@ -174,6 +181,50 @@ export function usePortfolio(uid) {
     [rawPortfolio, cotizaciones]
   )
   const resumen = useMemo(() => computeResumen(portfolio), [portfolio])
+
+  // Rendimiento de los últimos 30 días (o los días disponibles si hay menos historia).
+  // Compara el valor total actual con la entrada del historial más cercana a 30d atrás.
+  // Retorna null cuando no hay historia suficiente (primer sync → mostrar N/D).
+  const rend30d = useMemo(() => {
+    if (!portfolio || !portfolioHistory) return null
+    const total = portfolio._valor_total_ars
+    if (!total || total <= 0) return null
+
+    const dates = Object.keys(portfolioHistory).sort()
+    if (dates.length < 2) return null   // necesitamos al menos 2 puntos
+
+    // Hoy en Buenos Aires (UTC-3)
+    const bueStr = new Date().toLocaleString('en-US', { timeZone: 'America/Argentina/Buenos_Aires' })
+    const bue    = new Date(bueStr)
+    const todayStr = bue.toISOString().substring(0, 10)
+
+    // Fecha objetivo: 30 días atrás
+    const target = new Date(bue)
+    target.setDate(target.getDate() - 30)
+    const targetStr = target.toISOString().substring(0, 10)
+
+    // Buscar la entrada más reciente que sea ≤ targetStr (exactamente 30d o antes)
+    // Si no hay, usar la más antigua disponible (historia parcial < 30d)
+    const before = dates.filter(d => d <= targetStr && d < todayStr)
+    const refDate = before.length > 0
+      ? before[before.length - 1]   // más reciente ≤ 30d atrás
+      : dates.find(d => d < todayStr) // más antiguo disponible
+
+    if (!refDate) return null
+
+    const oldValue = portfolioHistory[refDate]
+    if (!oldValue || oldValue <= 0) return null
+
+    const msPerDay = 1000 * 60 * 60 * 24
+    const days = Math.round((new Date(todayStr) - new Date(refDate)) / msPerDay)
+    if (days < 1) return null
+
+    return {
+      pct:  parseFloat(((total - oldValue) / oldValue * 100).toFixed(2)),
+      absARS: parseFloat((total - oldValue).toFixed(2)),
+      days,
+    }
+  }, [portfolio, portfolioHistory])
 
   // Leer is_stale y ultima_sync desde cualquier categoría del portfolio raw.
   // El backend escribe estos campos en cada doc; tomamos el más reciente.
@@ -200,5 +251,6 @@ export function usePortfolio(uid) {
     loading,
     isStale,
     ultimaSync,
+    rend30d,
   }
 }

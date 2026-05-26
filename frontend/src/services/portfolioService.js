@@ -30,6 +30,14 @@ export function onSnapshotCatalysts(uid, callback) {
   })
 }
 
+// Historial diario del valor total de la cartera para calcular rend. mensual.
+// Firestore doc: /users/{uid}/meta/portfolio_history  → {YYYY-MM-DD: total_ars, ...}
+export function onSnapshotPortfolioHistory(uid, callback) {
+  return onSnapshot(doc(db, 'users', uid, 'meta', 'portfolio_history'), (snap) => {
+    callback(snap.exists() ? snap.data() : {})
+  })
+}
+
 export async function addPosicion(uid, categoria, posicion) {
   const ref = doc(db, 'users', uid, 'portfolio', categoria)
   const snap = await getDoc(ref)

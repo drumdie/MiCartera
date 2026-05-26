@@ -41,7 +41,7 @@ export default function Dashboard() {
   const { activeCurrency, distMode, setDistMode,
           cotizaciones, resumen, portfolio,
           catalizadores, stressTest, fundamental,
-          lastSync } = useApp()
+          lastSync, rend30d } = useApp()
   const { privacyOn, toggle: togglePrivacy } = usePrivacy()
 
   const [activeTab,      setActiveTab]      = useState('posiciones')
@@ -100,23 +100,22 @@ export default function Dashboard() {
       default: return ''
     }
   })()
-  const rendPct = (activeCurrency === 'ARS' || activeCurrency === 'BNA')
-    ? (resumen?.rend_total_ars_pct     ?? null)
-    : (resumen?.rend_total_usd_mep_pct ?? null)
-  const rendPos = (rendPct ?? 0) >= 0
+  // ── Rendimiento 30d desde historial de snapshots ─────────────────────────
+  const rend30dPct = rend30d?.pct ?? null
+  const rend30dPos = (rend30dPct ?? 0) >= 0
+  const rend30dLabel = rend30d
+    ? (rend30d.days >= 30 ? 'Rend. 30d' : `Rend. ${rend30d.days}d`)
+    : 'Rend. 30d'
 
-  // Ganancia absoluta en moneda activa
-  const gananciaARS = resumen?.ganancia_total_ars ?? null
-  const gananciaUSD = resumen?.ganancia_total_usd ?? null
-  const gananciaDisp = (() => {
-    if (activeCurrency === 'ARS' || activeCurrency === 'BNA')
-      return gananciaARS != null ? formatARS(gananciaARS) : null
-    if (activeCurrency === 'MEP')
-      return gananciaUSD != null ? formatUSD(gananciaUSD) : null
-    if (activeCurrency === 'CCL')
-      return gananciaUSD != null ? formatUSD(gananciaUSD) : null
-    return null
-  })()
+  // Ganancia absoluta del período en moneda activa
+  const rend30dDisp = rend30d ? (() => {
+    const abs = rend30d.absARS
+    switch (activeCurrency) {
+      case 'MEP': return formatUSD(abs / cotizaciones.dolar_mep)
+      case 'CCL': return formatUSD(abs / cotizaciones.dolar_ccl)
+      default:    return formatARS(abs)
+    }
+  })() : null
 
   // ── KPIs ──────────────────────────────────────────────────────────────────
   const liqPct = portfolio?.liquidez?.pct_cartera    ?? 0
@@ -151,17 +150,17 @@ export default function Dashboard() {
           <div className="total-amount"><PrivacyMask>{totalDisp}</PrivacyMask></div>
           <div className="total-sub">{totalSub}</div>
           <div className="total-rend">
-            <span className="rend-label">Rend. desde compra</span>
-            <span className={`rend-val${rendPos ? '' : ' neg'}`}>
-              {rendPct != null
-                ? <>{rendPos ? '▲' : '▼'} {rendPos ? '+' : ''}{rendPct.toFixed(2).replace('.', ',')}%</>
-                : <span style={{ color: 'var(--text-muted, #888)', fontSize: '0.85em' }}>N/D</span>
+            <span className="rend-label">{rend30dLabel}</span>
+            <span className={`rend-val${rend30dPct != null ? (rend30dPos ? '' : ' neg') : ''}`}>
+              {rend30dPct != null
+                ? <>{rend30dPos ? '▲' : '▼'} {rend30dPos ? '+' : ''}{rend30dPct.toFixed(2).replace('.', ',')}%</>
+                : <span style={{ color: 'var(--text-muted, #888)', fontSize: '0.85em' }}>N/D · sincronizá más días</span>
               }
             </span>
           </div>
-          {gananciaDisp != null && (
-            <div style={{ fontSize: 11, color: (gananciaARS ?? 0) >= 0 ? 'var(--green, #00e5a0)' : 'var(--red, #e05c5c)', marginTop: 2, textAlign: 'right' }}>
-              {(gananciaARS ?? 0) >= 0 ? '+' : ''}{gananciaDisp} ganancia acumulada
+          {rend30dDisp != null && (
+            <div style={{ fontSize: 11, color: rend30dPos ? 'var(--green, #00e5a0)' : 'var(--red, #e05c5c)', marginTop: 2, textAlign: 'right' }}>
+              {rend30dPos ? '+' : ''}{rend30dDisp} en {rend30d.days} días
             </div>
           )}
         </div>

@@ -12,7 +12,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
 
 from fastapi import APIRouter, HTTPException, Request
 from firebase_admin import firestore
@@ -391,6 +391,22 @@ async def sync_portfolio(request: Request, force_full: bool = False):
 
     # Persistir cache de costos promedios para syncs incrementales futuros
     meta_ref.document("avg_costs").set(avg_costs_state)
+
+    # Snapshot diario del valor total para calcular rendimiento mensual.
+    # Guarda {YYYY-MM-DD: total_ars} en un único doc que se acumula con merge=True.
+    # El frontend lo lee y calcula (valor_hoy - valor_30d_atrás) / valor_30d_atrás × 100.
+    total_snapshot = round(sum(
+        p.get("valor_corriente_ars", 0)
+        for posiciones in grupos.values()
+        for p in posiciones
+    ), 2)
+    if total_snapshot > 0:
+        bue_tz = timezone(timedelta(hours=-3))
+        today_bue = datetime.now(bue_tz).strftime("%Y-%m-%d")
+        meta_ref.document("portfolio_history").set(
+            {today_bue: total_snapshot},
+            merge=True,
+        )
 
     return {
         "status": "ok",

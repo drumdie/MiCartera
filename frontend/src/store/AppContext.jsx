@@ -59,6 +59,7 @@ export function AppProvider({ children }) {
     fundamental:   fsFundamental,
     isStale:       fsIsStale,
     ultimaSync:    fsUltimaSync,
+    rend30d:       fsRend30d,
   } = usePortfolio(user?.uid)
 
   // isDemo: solo cuando no hay sesión activa
@@ -115,6 +116,7 @@ export function AppProvider({ children }) {
       syncPPI, syncing, syncError, lastSync,
       isStale: !isDemo && (fsIsStale ?? false),
       ultimaSync: !isDemo ? (fsUltimaSync ?? null) : null,
+      rend30d: !isDemo ? (fsRend30d ?? null) : null,
     }}>
       {children}
     </AppContext.Provider>

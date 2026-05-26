@@ -10,9 +10,27 @@ export default function AssetRow({ position, expanded, onToggle, isCedear, isBon
   const isMEPmode = activeCurrency === 'MEP' || activeCurrency === 'CCL'
 
   // Rendimiento del día → tr-mid (siempre visible)
-  // Cuando is_stale (mercado cerrado), el rend_dia_pct guardado es del último día de ronda
-  // → mostrar "—" para no confundir con datos del día actual
-  const rendDia  = isStale ? null : (position.rend_dia_pct ?? null)
+  //
+  // Regla de negocio (mercado argentino, UTC-3):
+  //   • Mercado abierto (isStale=false)         → intradiario actual
+  //   • Mercado cerrado, mismo día ≥ 11:00      → último intradiario de la rueda
+  //   • Después de 00:00 o fin de semana        → 0% (nuevo día sin rueda aún)
+  //   • Hora < 11:00 en día hábil               → 0% (mercado todavía no abrió)
+  const rendDia = (() => {
+    if (!isStale) return position.rend_dia_pct ?? null
+
+    // Mercado cerrado: determinar qué mostrar según la hora en Buenos Aires
+    const bueStr = new Date().toLocaleString('en-US', { timeZone: 'America/Argentina/Buenos_Aires' })
+    const bue    = new Date(bueStr)
+    const dow    = bue.getDay()    // 0=Dom, 6=Sáb
+    const hour   = bue.getHours()
+
+    // Fin de semana o antes de apertura (11:00): no hubo rueda hoy → 0%
+    if (dow === 0 || dow === 6 || hour < 11) return 0
+
+    // Día hábil ≥ 11:00: la rueda ocurrió hoy → mostrar el último intradiario
+    return position.rend_dia_pct ?? 0
+  })()
   const isDiaPos = rendDia == null || rendDia >= 0
 
   // Rendimiento histórico desde compra → panel expandido, sigue toggle de moneda
@@ -132,12 +150,12 @@ export default function AssetRow({ position, expanded, onToggle, isCedear, isBon
             </div>
           )}
 
-          {/* Rendimiento del día — solo cuando el mercado está abierto */}
-          {!isStale && position.rend_dia_pct != null && (
+          {/* Rendimiento del día — usa la misma lógica horaria que tr-mid */}
+          {rendDia !== null && (
             <div>
               <div className="tg-label">Rend. Día</div>
-              <div className={`tg-val ${position.rend_dia_pct >= 0 ? 'pos' : 'neg'}`}>
-                {formatPctShort(position.rend_dia_pct)}
+              <div className={`tg-val ${rendDia >= 0 ? 'pos' : 'neg'}`}>
+                {formatPctShort(rendDia)}
               </div>
             </div>
           )}
