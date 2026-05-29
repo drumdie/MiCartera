@@ -56,3 +56,10 @@ Thumbs.db
 
 # ── Debug / sesiones temporales ──────────────────────────────────────────────
 debug/
+
+# ── Datos reales de cartera — NUNCA al repo ───────────────────────────────────
+fundamental_catalizadores_v7.txt
+arquitectura_logica_carteraV7.md
+metodologia_catalizadores.md
+*_cartera*.txt
+*_cartera*.md
