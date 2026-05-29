@@ -1,10 +1,8 @@
 import { useState, useEffect, useMemo, useCallback } from 'react'
-import { MOCK_COTIZACIONES, MOCK_STRESS_TEST, MOCK_FUNDAMENTAL } from '../data/mockPortfolio'
+import { MOCK_COTIZACIONES, MOCK_STRESS_TEST } from '../data/mockPortfolio'
 import {
-  onSnapshotPortfolio,
   onSnapshotCotizaciones,
   onSnapshotCatalysts,
-  onSnapshotPortfolioHistory,
   onSnapshotFundamentals,
 } from '../services/portfolioService'
 import { apiGet } from '../services/apiClient'
@@ -137,14 +135,37 @@ export function usePortfolio(uid) {
   const [rawFundamentals,   setRawFundamentals]   = useState({})
   const [loading,           setLoading]           = useState(true)
 
-  // Suscripciones Firestore
-  useEffect(() => {
-    if (!uid) { setLoading(false); return }
-    return onSnapshotPortfolio(uid, (data) => {
+  const fetchPortfolio = useCallback(async () => {
+    if (!uid) return
+    try {
+      const data = await apiGet('/api/portfolio')
       setRawPortfolio(data)
       setLoading(false)
-    })
+    } catch {
+      setLoading(false)
+    }
   }, [uid])
+
+  const fetchPortfolioHistory = useCallback(async () => {
+    if (!uid) return
+    try {
+      setPortfolioHistory(await apiGet('/api/portfolio/history'))
+    } catch {
+      setPortfolioHistory({})
+    }
+  }, [uid])
+
+  const refreshPortfolio = useCallback(async () => {
+    await Promise.all([fetchPortfolio(), fetchPortfolioHistory()])
+  }, [fetchPortfolio, fetchPortfolioHistory])
+
+  // Portfolio cifrado en Firestore: se lee por backend y se refresca por polling.
+  useEffect(() => {
+    if (!uid) { setLoading(false); return }
+    refreshPortfolio()
+    const id = window.setInterval(refreshPortfolio, 60000)
+    return () => window.clearInterval(id)
+  }, [uid, refreshPortfolio])
 
   useEffect(() => {
     return onSnapshotCotizaciones((data) => {
@@ -155,11 +176,6 @@ export function usePortfolio(uid) {
   useEffect(() => {
     if (!uid) return
     return onSnapshotCatalysts(uid, setCatalizadores)
-  }, [uid])
-
-  useEffect(() => {
-    if (!uid) return
-    return onSnapshotPortfolioHistory(uid, setPortfolioHistory)
   }, [uid])
 
   useEffect(() => {
@@ -270,6 +286,7 @@ export function usePortfolio(uid) {
     resumen,
     catalizadores,
     stressTest,
+    refreshPortfolio,
     refreshStress: fetchStress,
     fundamental: fundamentalData,
     loading,

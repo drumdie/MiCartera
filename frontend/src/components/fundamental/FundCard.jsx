@@ -9,17 +9,54 @@ const SENT_CLASS = {
   neutral:  'neutral',
 }
 
+// Escenario puede ser string directo ("$55–70") u objeto v7 ({ precio, prob, desc })
+function scenarioPrice(val) {
+  if (!val) return null
+  if (typeof val === 'string') return val
+  return val.precio ?? null
+}
+
 export default function FundCard({ position }) {
   const [showTV, setShowTV] = useState(false)
 
-  const { ticker, descripcion, accion_tactica, sentimiento,
-          ebitda_ttm, ev_ebitda, ev_ebitda_quality, mg_ebitda,
-          ratios = [], tesis, escenarios = {}, tv_symbol } = position
+  const {
+    ticker, descripcion, accion_tactica, sentimiento,
+    // KPIs legacy (yfinance directo)
+    ebitda_ttm, ev_ebitda, ev_ebitda_quality, mg_ebitda,
+    // KPIs v7 (objeto dinámico de Claude)
+    kpis,
+    // Q1 highlight (Claude)
+    q1_2026, q1_fuente,
+    // Comparable peer (Claude)
+    comparable_ev_ebitda,
+    // Ratios array (legacy)
+    ratios = [],
+    // Tesis y escenarios
+    tesis, escenarios = {},
+    // TradingView
+    tv_symbol,
+  } = position
 
   const sentClass = SENT_CLASS[sentimiento] ?? 'neutral'
 
+  // Si existe el objeto `kpis` (v7 / Claude) → usarlo dinámicamente
+  // Si no → caer a los 3 fijos de yfinance
+  const kpiEntries = kpis
+    ? Object.entries(kpis).filter(([, v]) => v != null && v !== '')
+    : [
+        ['EBITDA TTM', ebitda_ttm],
+        ['EV/EBITDA',  ev_ebitda],
+        ['Mg. EBITDA', mg_ebitda],
+      ].filter(([, v]) => v != null)
+
+  const bearVal = scenarioPrice(escenarios.bear)
+  const baseVal = scenarioPrice(escenarios.base)
+  const bullVal = scenarioPrice(escenarios.bull)
+
   return (
     <div className={`fund-card ${sentClass}`}>
+
+      {/* Header: ticker + badge */}
       <div className="fc-top">
         <div>
           <div className="fc-ticker">{ticker}</div>
@@ -28,21 +65,36 @@ export default function FundCard({ position }) {
         <TacticalBadge accion={accion_tactica} />
       </div>
 
-      <div className="fc-ebitda-row">
-        <div className="fc-ebitda-item">
-          <div className="fc-ebitda-label">EBITDA TTM</div>
-          <div className="fc-ebitda-val">{ebitda_ttm ?? '—'}</div>
+      {/* Q1 highlight chip */}
+      {q1_2026 && (
+        <div className="fc-q1">
+          <span className="fc-q1-icon">✅</span>
+          <span className="fc-q1-text">{q1_2026}</span>
+          {q1_fuente && <span className="fc-q1-fuente"> · {q1_fuente}</span>}
         </div>
-        <div className="fc-ebitda-item">
-          <div className="fc-ebitda-label">EV/EBITDA</div>
-          <div className="fc-ebitda-val">{ev_ebitda ?? '—'}</div>
-        </div>
-        <div className="fc-ebitda-item">
-          <div className="fc-ebitda-label">Mg. EBITDA</div>
-          <div className="fc-ebitda-val">{mg_ebitda ?? '—'}</div>
-        </div>
-      </div>
+      )}
 
+      {/* KPIs dinámicos o fixed fallback */}
+      {kpiEntries.length > 0 && (
+        <div className="fc-kpis">
+          {kpiEntries.map(([label, value]) => (
+            <div className="fc-kpi-item" key={label}>
+              <div className="fc-kpi-label">{String(label).replace(/_/g, ' ')}</div>
+              <div className="fc-kpi-val">{value}</div>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {/* Comparable peer */}
+      {comparable_ev_ebitda && (
+        <div className="fc-comparable">
+          vs {comparable_ev_ebitda.nombre}:{' '}
+          <span className="fc-comparable-val">{comparable_ev_ebitda.valor}</span>
+        </div>
+      )}
+
+      {/* Ratios array (legacy / Claude analysis) */}
       {ratios.length > 0 && (
         <div className="fc-ratios">
           {ratios.map(r => (
@@ -56,24 +108,24 @@ export default function FundCard({ position }) {
 
       {tesis && <div className="fc-tesis">{tesis}</div>}
 
-      {(escenarios.bear || escenarios.base || escenarios.bull) && (
+      {(bearVal || baseVal || bullVal) && (
         <div className="fc-scenarios">
-          {escenarios.bear && (
+          {bearVal && (
             <div className="fc-sce">
               <div className="fc-sce-label">Bear</div>
-              <div className="fc-sce-val bear">{escenarios.bear}</div>
+              <div className="fc-sce-val bear">{bearVal}</div>
             </div>
           )}
-          {escenarios.base && (
+          {baseVal && (
             <div className="fc-sce">
               <div className="fc-sce-label">Base</div>
-              <div className="fc-sce-val base">{escenarios.base}</div>
+              <div className="fc-sce-val base">{baseVal}</div>
             </div>
           )}
-          {escenarios.bull && (
+          {bullVal && (
             <div className="fc-sce">
               <div className="fc-sce-label">Bull</div>
-              <div className="fc-sce-val bull">{escenarios.bull}</div>
+              <div className="fc-sce-val bull">{bullVal}</div>
             </div>
           )}
         </div>
@@ -81,12 +133,9 @@ export default function FundCard({ position }) {
 
       {/* Botón TradingView */}
       {tv_symbol && (
-        <button
-          className="fc-tv-btn"
-          onClick={() => setShowTV(v => !v)}
-        >
+        <button className="fc-tv-btn" onClick={() => setShowTV(v => !v)}>
           <span>{showTV ? '▲' : '📈'}</span>
-          <span>{showTV ? 'Ocultar gráfico' : `Gráfico y financieros · ${tv_symbol}`}</span>
+          <span>{showTV ? 'Ocultar gráfico' : `Gráfico · ${tv_symbol}`}</span>
         </button>
       )}
 

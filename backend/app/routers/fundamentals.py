@@ -25,6 +25,8 @@ from datetime import datetime, timezone
 from fastapi import APIRouter, Request
 from firebase_admin import firestore
 
+from app.routers.portfolio import read_user_portfolio
+
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/fundamentals", tags=["fundamentals"])
 
@@ -211,23 +213,20 @@ async def refresh_fundamentals(request: Request):
     db  = firestore.client()
     ref = db.collection("users").document(uid)
 
-    cedears_snap  = ref.collection("portfolio").document("cedears").get()
-    acciones_snap = ref.collection("portfolio").document("acciones_ar").get()
+    portfolio = read_user_portfolio(uid)
 
     # (yf_ticker, ticker, descripcion, categoria, subyacente)
     tasks: list[tuple] = []
 
-    if cedears_snap.exists:
-        for pos in (cedears_snap.to_dict().get("posiciones") or []):
-            sub = pos.get("subyacente_usd") or pos.get("subyacente")
-            if sub:
-                tasks.append((sub, pos.get("ticker", sub), pos.get("descripcion", ""), "cedear", sub))
+    for pos in (portfolio.get("cedears", {}).get("posiciones") or []):
+        sub = pos.get("subyacente_usd") or pos.get("subyacente")
+        if sub:
+            tasks.append((sub, pos.get("ticker", sub), pos.get("descripcion", ""), "cedear", sub))
 
-    if acciones_snap.exists:
-        for pos in (acciones_snap.to_dict().get("posiciones") or []):
-            t = pos.get("ticker", "")
-            if t:
-                tasks.append((f"{t}.BA", t, pos.get("descripcion", ""), "accion_ar", None))
+    for pos in (portfolio.get("acciones_ar", {}).get("posiciones") or []):
+        t = pos.get("ticker", "")
+        if t:
+            tasks.append((f"{t}.BA", t, pos.get("descripcion", ""), "accion_ar", None))
 
     if not tasks:
         return {"status": "ok", "mensaje": "No hay tickers para actualizar"}

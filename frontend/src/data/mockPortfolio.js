@@ -159,29 +159,51 @@ export const MOCK_LIQUIDEZ = {
 }
 
 export const MOCK_CATALIZADORES = [
+  // ── COMPLETADOS ─────────────────────────────────────────────
   {
-    fecha: '2026-05-05', tipo: 'earnings', urgencia: 'urgente',
-    evento: 'Earnings Q1 — Bloque internacional',
-    descripcion: 'Múltiples reportes en la misma semana. Volatilidad alta esperada.',
-    tickers_afectados: ['CEDR1', 'CEDR2'],
+    fecha: '2026-04-29', tipo: 'earnings', estado: 'done',
+    evento: 'Earnings Q1 2026 — Bloque internacional',
+    tickers: ['CEDR2', 'CEDR3'],
+    resultado: 'CEDR2: Revenue +22%, EPS +82% — beat fuerte. CEDR3: ETF en línea con mercado.',
   },
   {
-    fecha: '2026-05-20', tipo: 'earnings', urgencia: 'cercano',
-    evento: 'Earnings Q1 — Posición local principal',
-    descripcion: 'El mercado mira más el catalizador regulatorio que los números trimestrales.',
-    tickers_afectados: ['TKRC'],
+    fecha: '2026-05-07', tipo: 'earnings', estado: 'done',
+    evento: 'Earnings Q1 2026 — Energía AR',
+    tickers: ['TKRA', 'TKRC'],
+    resultado: 'TKRA: EBITDA récord (+28% a/a). TKRC: utilidades +12%, márgenes sostenidos.',
+  },
+  // ── PRÓXIMOS ─────────────────────────────────────────────────
+  {
+    fecha: '2026-07-15', tipo: 'earnings', estado: 'near',
+    evento: 'Earnings Q2 2026 — Bloque AR',
+    descripcion: 'Brent en zona favorable. Posiciones energéticas pueden seguir superando expectativas.',
+    tickers: ['TKRA', 'TKRC', 'TKRD'],
   },
   {
-    fecha: '2026-09-01', tipo: 'rti_tarifario', urgencia: 'estructural',
-    evento: 'Revisión tarifaria / Regulatoria',
-    descripcion: 'Si la revisión supera expectativas puede ser el mayor catalizador del bloque regulado.',
-    tickers_afectados: ['TKRC', 'TKRD'],
+    fecha: '2026-08-26', tipo: 'earnings', estado: 'near',
+    evento: 'Earnings Q2 FY27 — CEDEAR Tech principal',
+    descripcion: 'Guidance fue muy alto. El ciclo de inversión en IA sigue en rampa. Bar elevado.',
+    tickers: ['CEDR2'],
+  },
+  // ── ESTRUCTURALES ────────────────────────────────────────────
+  {
+    fecha: 'Q2–Q3 2026', tipo: 'rti_tarifario', estado: 'structural',
+    evento: 'RTI — Definición tarifaria regulada',
+    descripcion: 'El ajuste tarifario puede ser el mayor catalizador del bloque regulado en 2026.',
+    tickers: ['TKRC', 'TKRD'],
   },
   {
-    fecha: '2027-06-01', tipo: 'evento_macro', urgencia: 'lejano',
+    fecha: 'TBD 2026', tipo: 'corporativo', estado: 'structural',
+    evento: 'Adquisición estratégica — CEDEAR 1',
+    descripcion: 'Transformacional. Potencial rerating de múltiplos si se confirma.',
+    tickers: ['CEDR1'],
+  },
+  // ── LARGO PLAZO ───────────────────────────────────────────────
+  {
+    fecha: '2027-2028', tipo: 'operacional', estado: 'far',
     evento: 'Inicio de producción — Proyecto estratégico',
     descripcion: 'Principal catalizador de largo plazo. Déficit de materia prima proyectado 2026–2028.',
-    tickers_afectados: ['CEDR1'],
+    tickers: ['CEDR1'],
   },
 ]
 
@@ -222,29 +244,36 @@ export const MOCK_STRESS_TEST = [
 
 export const MOCK_FUNDAMENTAL = [
   {
-    sector: 'Sector A — Ejemplo',
+    sector: 'Energía — Ejemplo AR',
     posiciones: [
       {
-        ticker: 'TKRA', descripcion: 'Empresa A · 20 acc. · +55% USD · 18,00% cartera',
+        ticker: 'TKRA', descripcion: 'Empresa A · 20 acc. · +55% USD · 18% cartera',
         accion_tactica: 'tomar_parcial', sentimiento: 'bull',
-        ebitda_ttm: 'USD 4,5B', ev_ebitda: '4,2x', ev_ebitda_quality: 'good', mg_ebitda: '36%',
-        ratios: [
-          { label: 'P/E', value: '7,1x', quality: 'good' },
-          { label: 'Deuda neta', value: 'USD 5,8B', quality: 'mid' },
-          { label: 'vs Par regional', value: '–40% desc.', quality: 'good' },
-        ],
-        tesis: 'Posición estructural con descuento masivo vs pares. Catalizador regulatorio pendiente.',
+        q1_2026: 'EBITDA $1.500M (+28% a/a) · Récord histórico · FCF positivo',
+        kpis: {
+          ebitda_ttm:    'USD 4,5B',
+          ev_ebitda:     '4,2x',
+          margen_ebitda: '36%',
+          leverage:      '1,6x',
+          fcf_q1:        '$870M',
+        },
+        comparable_ev_ebitda: { nombre: 'Par regional', valor: '5,2x' },
+        tesis: 'Integrado con proyecto Vaca Muerta en construcción. Descuento masivo vs pares regionales. Catalizador regulatorio pendiente.',
         escenarios: { bear: '$25–30', base: '$45–55', bull: '$75–90' },
       },
       {
         ticker: 'TKRE', descripcion: 'Empresa E · 80 acc. · –20% USD',
         accion_tactica: 'compra_escalonada', sentimiento: 'neutral',
-        ebitda_ttm: 'ARS 160B', ev_ebitda: '3,1x', ev_ebitda_quality: 'good', mg_ebitda: '24%',
-        ratios: [
-          { label: 'P/B', value: '0,7x', quality: 'good' },
-          { label: 'vs Par', value: '–38% desc.', quality: 'good' },
-        ],
-        tesis: 'Value puro en USD. Descuento masivo vs pares. Compra escalonada con liquidez disponible.',
+        q1_2026: null,
+        kpis: {
+          ebitda:        'ARS 160B',
+          ev_ebitda:     '2,8x',
+          margen_ebitda: '24%',
+          p_book:        '0,6x',
+          vs_comparable: '–40% descuento',
+        },
+        comparable_ev_ebitda: { nombre: 'Par regional', valor: '5,0x' },
+        tesis: 'Value puro en USD. Descuento masivo vs pares. Riesgo sectorial presente. Compra escalonada en correcciones.',
         escenarios: { bear: '$600', base: '$950–1.100', bull: '$1.400+' },
       },
     ],
@@ -255,13 +284,31 @@ export const MOCK_FUNDAMENTAL = [
       {
         ticker: 'CEDR2', descripcion: 'CEDEAR Tech · 25 cert. · +40% USD',
         accion_tactica: 'tomar_parcial', sentimiento: 'bull',
-        ebitda_ttm: 'USD 120B', ev_ebitda: '42x', ev_ebitda_quality: 'bad', mg_ebitda: '60%',
-        ratios: [
-          { label: 'P/E fwd', value: '28x', quality: 'mid' },
-          { label: 'Target analistas', value: '$250 cons.', quality: '' },
-        ],
-        tesis: 'Infraestructura tecnológica dominante. Múltiplos elevados — tomar parcial.',
+        q1_2026: 'Revenue +22% · EPS +82% · Cloud +63% · Beat generalizado',
+        kpis: {
+          ebitda_ttm:    'USD 120B',
+          ev_ebitda:     '42x',
+          margen_ebitda: '60%',
+          p_e_fwd:       '28x',
+        },
+        comparable_ev_ebitda: null,
+        tesis: 'Infraestructura tecnológica dominante. Q1 excelente. Múltiplos elevados — tomar parcial para reducir concentración.',
         escenarios: { bear: '$130', base: '$190–220', bull: '$350' },
+      },
+      {
+        ticker: 'CEDR1', descripcion: 'CEDEAR Minera · 72 cert. · +164% USD',
+        accion_tactica: 'mantener', sentimiento: 'bull',
+        q1_2026: null,
+        kpis: {
+          ebitda:           'Pre-producción',
+          ev_ebitda:        'N/A',
+          reservas:         '4,8M t LCE',
+          prod_estimada:    '2027–2028',
+          rigi:             'Aprobado',
+        },
+        comparable_ev_ebitda: null,
+        tesis: 'Tesis de largo plazo. RIGI aprobado. Alta volatilidad. Posición concentrada — no agregar.',
+        escenarios: { bear: '$5–7', base: '$15–20', bull: '$30–40' },
       },
     ],
   },

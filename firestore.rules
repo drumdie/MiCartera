@@ -6,9 +6,33 @@ service cloud.firestore {
       return request.auth != null && request.auth.uid == uid;
     }
 
-    // Datos del usuario: acceso completo solo al propietario
-    match /users/{uid}/{document=**} {
+    // Datos cifrados del usuario: solo backend Admin SDK.
+    // El cliente accede por la API para que Firestore no exponga plaintext ni ciphertext.
+    match /users/{uid}/portfolio/{document=**} {
+      allow read, write: if false;
+    }
+
+    match /users/{uid}/meta/{docId} {
+      allow read, write: if docId != "avg_costs"
+        && docId != "portfolio_history"
+        && isOwner(uid);
+    }
+
+    match /users/{uid} {
       allow read, write: if isOwner(uid);
+    }
+
+    match /users/{uid}/catalysts/{docId} {
+      allow read, write: if isOwner(uid);
+    }
+
+    match /users/{uid}/fundamentals/{docId} {
+      allow read, write: if isOwner(uid);
+    }
+
+    match /users/{uid}/securityEvents/{docId} {
+      allow read: if isOwner(uid);
+      allow write: if false;
     }
 
     // Cotizaciones de mercado: lectura autenticada, escritura solo Admin SDK

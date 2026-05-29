@@ -30,5 +30,9 @@ class Settings(BaseSettings):
     # Copiar desde Firebase Console → Authentication → Users.
     ADMIN_UID: str = ""
 
+    # Clave de cifrado para datos sensibles en Firestore.
+    # Puede ser una Fernet key o un secreto largo; el backend deriva una clave estable.
+    DATA_ENCRYPTION_KEY: str = ""
+
 
 settings = Settings()

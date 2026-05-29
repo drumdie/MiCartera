@@ -74,7 +74,7 @@ Seguimiento de fases y hitos del proyecto PWA de cartera de inversiones argentin
 - [x] Firebase Security Rules: `/users/{uid}/**` solo owner, `/market/**` read-only auth
 - [x] PrivacyMask component — oculta números con toggle
 - [x] localStorage para preferencias de privacidad
-- [ ] **Encriptación at-rest** (pendiente — tarea spawned)
+- [x] **Encriptación at-rest** (implementada; requiere `DATA_ENCRYPTION_KEY` y re-sync para migrar docs existentes)
 
 ---
 
@@ -107,10 +107,11 @@ Seguimiento de fases y hitos del proyecto PWA de cartera de inversiones argentin
 ## Tareas Transversales 🔧
 
 ### Encriptación at-rest
-- [ ] Encrypt antes de guardar en Firestore
-- [ ] Key en `.env` / Google Cloud Secret Manager
-- [ ] Frontend → backend API (no Firestore directo)
-- [ ] Pérdida de real-time onSnapshot, polling c/ 30-60s
+- [x] Encrypt antes de guardar en Firestore (`portfolio/*`, `meta/avg_costs`, `meta/portfolio_history`)
+- [x] Key en `.env` / Google Cloud Secret Manager (`DATA_ENCRYPTION_KEY`)
+- [x] Frontend → backend API (no Firestore directo para portfolio/history)
+- [x] Pérdida de real-time onSnapshot, polling c/ 60s
+- [ ] Migrar datos existentes: configurar key y ejecutar `/api/portfolio/sync`
 - **Tarea:** `mcp__ccd_session__spawn_task` — "Encrypt portfolio data at rest"
 
 ### Seguridad — Hallazgos Audit Codex (2026-04-30)
@@ -159,7 +160,7 @@ Seguimiento de fases y hitos del proyecto PWA de cartera de inversiones argentin
 | **Cotizaciones** | ✅ | Mercado actualizado c/ fallbacks |
 | **Privacidad** | ✅ | Rules + Privacy toggle |
 | **Seguridad (audit)** | ✅ | 2 HIGH resueltos; 1 MEDIUM pendiente (GD38 avg_cost) |
-| **Encriptación** | ⏳ | Planeado post-Fase 1 |
+| **Encriptación** | ✅ | Implementada; migración efectiva en el próximo sync con key configurada |
 | **Fundamentals** | ⏳ | Fase 2 |
 | **Stress Testing** | ⏳ | Fase 2 |
 

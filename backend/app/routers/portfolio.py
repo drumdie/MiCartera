@@ -18,6 +18,11 @@ from fastapi import APIRouter, HTTPException, Request
 from firebase_admin import firestore
 
 from app.services.ppi_client import ppi_client, PPIError
+from app.services.encryption import (
+    EncryptionNotConfigured,
+    decrypt_payload,
+    encrypt_payload,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -148,6 +153,15 @@ def _transform_position(
     ganancia_ars     = round(valor - costo_total_ars, 2) if costo_total_ars > 0 else 0.0
     ganancia_usd_mep = round(ganancia_ars / dolar_mep, 2) if dolar_mep > 0 and costo_total_ars > 0 else 0.0
 
+    # FIX 4: Para acciones_ar con avg_cost_usd histórico, sobreescribir rend_usd_pct y
+    # ganancia_usd_mep usando el MEP real al momento de cada compra (en lugar del MEP actual).
+    # Esto corrige el sesgo: precio_compra_ars / MEP_hoy ≠ precio_compra_usd_real.
+    avg_cost_usd = item.get("averagePriceUSD")
+    if avg_cost_usd and not is_usd and dolar_mep > 0 and avg_cost_usd > 0:
+        current_price_usd = precio_orig / dolar_mep
+        rend_usd_pct      = round((current_price_usd - avg_cost_usd) / avg_cost_usd * 100, 2)
+        ganancia_usd_mep  = round((current_price_usd - avg_cost_usd) * cantidad, 2)
+
     pos = {
         "ticker":              ticker,
         "descripcion":         descripcion,
@@ -159,14 +173,19 @@ def _transform_position(
         "ganancia_ars":        ganancia_ars,
         "ganancia_usd_mep":    ganancia_usd_mep,
         "rend_dia_pct":        rend_dia_pct,
-        # rend_usd_pct: solo se calcula para instrumentos USD o CEDEARs (proxy ARS).
-        # Para acciones ARS se guarda null → el frontend cae al rend_ars_pct como proxy.
-        "rend_usd_pct":        rend_usd_pct if (is_usd or categoria == "cedears") else None,
+        # rend_usd_pct: para instrumentos USD, CEDEARs, y acciones_ar con USD histórico.
+        # Para acciones ARS sin histórico USD → null → el frontend usa rend_ars_pct como proxy.
+        "rend_usd_pct":        rend_usd_pct if (is_usd or categoria == "cedears" or avg_cost_usd) else None,
         "rend_ars_pct":        rend_ars_pct,
     }
 
     if costo_prom > 0:
         pos["precio_compra_ars"] = costo_prom
+
+    # Exponer costo de compra en USD histórico para que AssetRow lo muestre directamente
+    # en modo MEP/CCL sin dividir por el MEP de hoy (que sería incorrecto).
+    if avg_cost_usd and not is_usd:
+        pos["precio_compra_usd"] = round(avg_cost_usd, 4)
 
     subyacente = item.get("UnderlyingTicker", item.get("underlyingTicker", ""))
     if subyacente:
@@ -216,6 +235,45 @@ def _build_liquidez(posiciones: list[dict]) -> dict:
 # Categorías que tienen cotización de mercado en tiempo real
 _CATS_CON_MERCADO = set(_MARKET_PARAMS.keys())
 
+
+def _decrypt_doc(data: dict | None, label: str) -> dict:
+    try:
+        return decrypt_payload(data)
+    except EncryptionNotConfigured:
+        logger.error("%s: DATA_ENCRYPTION_KEY no configurada para leer documento cifrado", label)
+        raise HTTPException(status_code=500, detail="Cifrado no configurado en el backend")
+    except Exception as exc:
+        logger.error("%s: error desencriptando documento: %s", label, exc)
+        raise HTTPException(status_code=500, detail="No se pudo leer datos cifrados")
+
+
+def _encrypt_doc(data: dict, label: str) -> dict:
+    try:
+        return encrypt_payload(data)
+    except EncryptionNotConfigured:
+        logger.error("%s: DATA_ENCRYPTION_KEY no configurada para escribir datos sensibles", label)
+        raise HTTPException(status_code=500, detail="Cifrado no configurado en el backend")
+
+
+def read_user_portfolio(uid: str) -> dict[str, dict]:
+    db = firestore.client()
+    user_ref = db.collection("users").document(uid)
+    categorias = ["acciones_ar", "cedears", "bonos", "ons", "fci", "liquidez"]
+    portfolio: dict[str, dict] = {}
+    for cat in categorias:
+        snap = user_ref.collection("portfolio").document(cat).get()
+        fallback = {"posiciones": [], "subtotal_ars": 0}
+        if cat == "liquidez":
+            fallback = {"detalle": [], "subtotal_ars": 0}
+        portfolio[cat] = _decrypt_doc(snap.to_dict(), f"portfolio/{cat}") if snap.exists else fallback
+    return portfolio
+
+
+def read_user_meta(uid: str, doc_id: str) -> dict:
+    db = firestore.client()
+    snap = db.collection("users").document(uid).collection("meta").document(doc_id).get()
+    return _decrypt_doc(snap.to_dict(), f"meta/{doc_id}") if snap.exists else {}
+
 # ---------------------------------------------------------------------------
 # Endpoint
 # ---------------------------------------------------------------------------
@@ -248,15 +306,22 @@ async def sync_portfolio(request: Request, force_full: bool = False):
     for cat in _CATS:
         snap = user_ref.collection("portfolio").document(cat).get()
         if snap.exists:
-            existing[cat] = snap.to_dict()
+            existing[cat] = _decrypt_doc(snap.to_dict(), f"portfolio/{cat}")
 
     cached_state = None
     if not force_full:
         cache_snap = meta_ref.document("avg_costs").get()
         if cache_snap.exists:
-            cached = cache_snap.to_dict()
+            cached = _decrypt_doc(cache_snap.to_dict(), "meta/avg_costs")
             if cached.get("full_sync_completed"):
-                cached_state = cached
+                # Auto-detect: cache anterior no tiene total_cost_usd → forzar full
+                # recompute para obtener rendimiento USD histórico correcto (mejora v8+)
+                tickers_c = cached.get("tickers", {})
+                has_usd = any(v.get("total_cost_usd", 0) > 0 for v in tickers_c.values())
+                if tickers_c and not has_usd:
+                    logger.info("Cache sin total_cost_usd → recálculo completo para USD histórico")
+                else:
+                    cached_state = cached
     else:
         # Eliminar caché para forzar recálculo completo desde 5 años de movimientos
         meta_ref.document("avg_costs").delete()
@@ -267,7 +332,7 @@ async def sync_portfolio(request: Request, force_full: bool = False):
             ppi_client.get_account_positions(),
             ppi_client.compute_avg_costs(cached_state),
         )
-        avg_costs, avg_costs_state = avg_result
+        avg_costs, avg_costs_usd, avg_costs_state = avg_result
     except Exception as exc:
         logger.error("Sync PPI falló para uid=%s: %s", uid, exc)
         ultima_sync = max(
@@ -348,6 +413,14 @@ async def sync_portfolio(request: Request, force_full: bool = False):
                     item = {**item, "averagePrice": round(avg_cost_calc / dolar_mep, 6)}
                 else:
                     item = {**item, "averagePrice": avg_cost_calc}
+        # Para acciones_ar: inyectar costo USD histórico (MEP al día de cada compra).
+        # Esto permite calcular rend_usd_pct y ganancia_usd_mep con el tipo de cambio real,
+        # no con el MEP de hoy (que sería incorrecto y subestimaría el costo de compra en USD).
+        if cat == "acciones_ar":
+            avg_usd = avg_costs_usd.get(ticker) or avg_costs_usd.get(ticker[:10])
+            if avg_usd:
+                item = {**item, "averagePriceUSD": avg_usd}
+
         grupos_raw[cat].append(item)
 
     # Obtener precios de apertura en paralelo para calcular rend_dia_pct
@@ -387,10 +460,14 @@ async def sync_portfolio(request: Request, force_full: bool = False):
         )
         data["ultima_sync"] = now
         data["is_stale"]    = not mercado_abierto
-        user_ref.collection("portfolio").document(cat).set(data)
+        user_ref.collection("portfolio").document(cat).set(
+            _encrypt_doc(data, f"portfolio/{cat}")
+        )
 
     # Persistir cache de costos promedios para syncs incrementales futuros
-    meta_ref.document("avg_costs").set(avg_costs_state)
+    meta_ref.document("avg_costs").set(
+        _encrypt_doc(avg_costs_state, "meta/avg_costs")
+    )
 
     # Snapshot diario del valor total para calcular rendimiento mensual.
     # Guarda {YYYY-MM-DD: total_ars} en un único doc que se acumula con merge=True.
@@ -403,9 +480,16 @@ async def sync_portfolio(request: Request, force_full: bool = False):
     if total_snapshot > 0:
         bue_tz = timezone(timedelta(hours=-3))
         today_bue = datetime.now(bue_tz).strftime("%Y-%m-%d")
-        meta_ref.document("portfolio_history").set(
-            {today_bue: total_snapshot},
-            merge=True,
+        history_ref = meta_ref.document("portfolio_history")
+        history_snap = history_ref.get()
+        history = (
+            _decrypt_doc(history_snap.to_dict(), "meta/portfolio_history")
+            if history_snap.exists
+            else {}
+        )
+        history[today_bue] = total_snapshot
+        history_ref.set(
+            _encrypt_doc(history, "meta/portfolio_history")
         )
 
     return {
@@ -417,6 +501,18 @@ async def sync_portfolio(request: Request, force_full: bool = False):
         "total_posiciones": sum(len(v) for v in grupos.values()),
         "timestamp": now,
     }
+
+
+@router.get("")
+async def get_portfolio(request: Request):
+    """Devuelve el portfolio desencriptado del usuario autenticado."""
+    return read_user_portfolio(request.state.uid)
+
+
+@router.get("/history")
+async def get_portfolio_history(request: Request):
+    """Devuelve el historial diario desencriptado del usuario autenticado."""
+    return read_user_meta(request.state.uid, "portfolio_history")
 
 
 @router.get("/debug-costs")

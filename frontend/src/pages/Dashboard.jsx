@@ -44,7 +44,7 @@ export default function Dashboard() {
           cotizaciones, resumen, portfolio,
           catalizadores, stressTest, fundamental,
           lastSync, rend30d,
-          refreshFundamentals, isDemo } = useApp()
+          refreshFundamentals, isDemo, user } = useApp()
   const { privacyOn, toggle: togglePrivacy } = usePrivacy()
 
   const [activeTab,        setActiveTab]        = useState('posiciones')
@@ -458,7 +458,13 @@ export default function Dashboard() {
         ) : (
           <div className="timeline">
             {[...catalizadores]
-              .sort((a, b) => a.fecha.localeCompare(b.fecha))
+              .sort((a, b) => {
+                // Completados al final
+                const aDone = (a.estado ?? a.urgencia) === 'done' ? 1 : 0
+                const bDone = (b.estado ?? b.urgencia) === 'done' ? 1 : 0
+                if (aDone !== bDone) return aDone - bDone
+                return String(a.fecha).localeCompare(String(b.fecha))
+              })
               .map((cat, i) => (
                 <CatalystItem
                   key={i}

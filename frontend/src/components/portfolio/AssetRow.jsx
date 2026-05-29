@@ -78,7 +78,14 @@ export default function AssetRow({ position, expanded, onToggle, isCedear, isBon
           {position.precio_compra_ars != null && (
             <div>
               <div className="tg-label">P. Compra {curLabel}</div>
-              <div className="tg-val"><PrivacyMask>{convertPrice(position.precio_compra_ars)}</PrivacyMask></div>
+              <div className="tg-val">
+                <PrivacyMask>
+                  {/* En modo MEP/CCL y con USD histórico: mostrar costo real (no ARS ÷ MEP actual) */}
+                  {isMEPmode && position.precio_compra_usd != null
+                    ? formatUSD(position.precio_compra_usd)
+                    : convertPrice(position.precio_compra_ars)}
+                </PrivacyMask>
+              </div>
             </div>
           )}
 

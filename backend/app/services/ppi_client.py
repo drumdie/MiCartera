@@ -342,52 +342,77 @@ class PPIClient:
                 if len(prices) >= 2:
                     medians[ticker] = _stats.median(prices)
 
-            # Promedio ponderado desde cero usando precio de ejecución (sin comisiones)
+            # Promedio ponderado desde cero usando precio de ejecución (sin comisiones).
+            # Trackea también total_cost_usd: divide cada compra ARS por el MEP del día
+            # para obtener el costo real en USD al tipo de cambio histórico.
             acum: dict[str, dict] = {}
             for ticker, movs in by_ticker.items():
-                acum[ticker] = {"qty": 0.0, "total_cost": 0.0}
+                acum[ticker] = {"qty": 0.0, "total_cost": 0.0, "total_cost_usd": 0.0}
                 ref = medians.get(ticker, 0.0)
                 for m in movs:
-                    unit_price = _ars_unit_price(m["price"], m["date"], ref, mep_history)
+                    unit_price_ars = _ars_unit_price(m["price"], m["date"], ref, mep_history)
+                    mep_dia        = _get_mep_for_date(m["date"], mep_history)
+                    unit_price_usd = (unit_price_ars / mep_dia) if mep_dia > 0 else 0.0
                     if m["amount"] < 0:                          # compra
-                        acum[ticker]["qty"]        += m["qty"]
-                        acum[ticker]["total_cost"] += m["qty"] * unit_price
-                    elif m["amount"] > 0 and acum[ticker]["qty"] > 0:  # venta
-                        avg = acum[ticker]["total_cost"] / acum[ticker]["qty"]
-                        acum[ticker]["qty"]        = max(0.0, acum[ticker]["qty"] - m["qty"])
-                        acum[ticker]["total_cost"] = acum[ticker]["qty"] * avg
+                        acum[ticker]["qty"]            += m["qty"]
+                        acum[ticker]["total_cost"]     += m["qty"] * unit_price_ars
+                        acum[ticker]["total_cost_usd"] += m["qty"] * unit_price_usd
+                    elif m["amount"] > 0 and acum[ticker]["qty"] > 0:  # venta parcial
+                        avg_ars = acum[ticker]["total_cost"]     / acum[ticker]["qty"]
+                        avg_usd = acum[ticker]["total_cost_usd"] / acum[ticker]["qty"]
+                        acum[ticker]["qty"]            = max(0.0, acum[ticker]["qty"] - m["qty"])
+                        acum[ticker]["total_cost"]     = acum[ticker]["qty"] * avg_ars
+                        acum[ticker]["total_cost_usd"] = acum[ticker]["qty"] * avg_usd
         else:
-            # Sync incremental: partir desde el estado cacheado
+            # Sync incremental: partir desde el estado cacheado.
+            # Si el cache no tiene total_cost_usd → se acumula desde 0 para nuevas compras.
             acum = {}
             for ticker, state in (cached_state.get("tickers") or {}).items():
                 acum[ticker] = {
-                    "qty":        float(state.get("qty", 0)),
-                    "total_cost": float(state.get("total_cost", 0)),
+                    "qty":            float(state.get("qty", 0)),
+                    "total_cost":     float(state.get("total_cost", 0)),
+                    "total_cost_usd": float(state.get("total_cost_usd", 0)),
                 }
 
             for ticker, movs in by_ticker.items():
                 if ticker not in acum:
-                    acum[ticker] = {"qty": 0.0, "total_cost": 0.0}
-                cur_avg = (
+                    acum[ticker] = {"qty": 0.0, "total_cost": 0.0, "total_cost_usd": 0.0}
+                cur_avg_ars = (
                     acum[ticker]["total_cost"] / acum[ticker]["qty"]
                     if acum[ticker]["qty"] > 0 else 0.0
                 )
                 for m in movs:
-                    unit_price = _ars_unit_price(m["price"], m["date"], cur_avg, mep_history)
+                    unit_price_ars = _ars_unit_price(m["price"], m["date"], cur_avg_ars, mep_history)
+                    mep_dia        = _get_mep_for_date(m["date"], mep_history)
+                    unit_price_usd = (unit_price_ars / mep_dia) if mep_dia > 0 else 0.0
                     if m["amount"] < 0:                          # compra
-                        acum[ticker]["qty"]        += m["qty"]
-                        acum[ticker]["total_cost"] += m["qty"] * unit_price
+                        acum[ticker]["qty"]            += m["qty"]
+                        acum[ticker]["total_cost"]     += m["qty"] * unit_price_ars
+                        acum[ticker]["total_cost_usd"] += m["qty"] * unit_price_usd
                         if acum[ticker]["qty"] > 0:
-                            cur_avg = acum[ticker]["total_cost"] / acum[ticker]["qty"]
-                    elif m["amount"] > 0 and acum[ticker]["qty"] > 0:  # venta
-                        cur_avg = acum[ticker]["total_cost"] / acum[ticker]["qty"]
-                        acum[ticker]["qty"]        = max(0.0, acum[ticker]["qty"] - m["qty"])
-                        acum[ticker]["total_cost"] = acum[ticker]["qty"] * cur_avg
+                            cur_avg_ars = acum[ticker]["total_cost"] / acum[ticker]["qty"]
+                    elif m["amount"] > 0 and acum[ticker]["qty"] > 0:  # venta parcial
+                        avg_ars = acum[ticker]["total_cost"]     / acum[ticker]["qty"]
+                        avg_usd = acum[ticker]["total_cost_usd"] / acum[ticker]["qty"]
+                        acum[ticker]["qty"]            = max(0.0, acum[ticker]["qty"] - m["qty"])
+                        acum[ticker]["total_cost"]     = acum[ticker]["qty"] * avg_ars
+                        acum[ticker]["total_cost_usd"] = acum[ticker]["qty"] * avg_usd
+                        if acum[ticker]["qty"] > 0:
+                            cur_avg_ars = avg_ars
 
         avg_costs = {
             ticker: round(pos["total_cost"] / pos["qty"], 6)
             for ticker, pos in acum.items()
             if pos["qty"] > 0 and pos["total_cost"] > 0
+        }
+
+        # avg_costs_usd: costo promedio en USD al tipo de cambio histórico del día de compra.
+        # Solo tiene sentido para instrumentos ARS (acciones_ar). Para CEDEARs/bonos USD
+        # el backend ya tiene el precio en USD directamente.
+        avg_costs_usd = {
+            ticker: round(pos["total_cost_usd"] / pos["qty"], 6)
+            for ticker, pos in acum.items()
+            if pos["qty"] > 0 and pos["total_cost_usd"] > 0
         }
 
         new_state = {
@@ -396,19 +421,20 @@ class PPIClient:
             "ultima_actualizacion": now.isoformat(),
             "tickers": {
                 ticker: {
-                    "qty":        round(pos["qty"], 6),
-                    "total_cost": round(pos["total_cost"], 2),
+                    "qty":            round(pos["qty"], 6),
+                    "total_cost":     round(pos["total_cost"], 2),
+                    "total_cost_usd": round(pos["total_cost_usd"], 4),
                 }
                 for ticker, pos in acum.items()
                 if pos["qty"] > 0 and pos["total_cost"] > 0
             },
         }
 
-        return avg_costs, new_state
+        return avg_costs, avg_costs_usd, new_state
 
     async def get_average_costs(self) -> dict:
         """Versión legacy usada por los endpoints de debug. Delega a compute_avg_costs."""
-        avg_costs, _ = await self.compute_avg_costs(cached_state=None)
+        avg_costs, _, _ = await self.compute_avg_costs(cached_state=None)
         return avg_costs
 
     # ------------------------------------------------------------------

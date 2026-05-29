@@ -10,10 +10,10 @@ El uid viene de request.state.uid (inyectado por FirebaseAuthMiddleware).
 from __future__ import annotations
 
 from fastapi import APIRouter, HTTPException, Request
-from firebase_admin import firestore
 
 from app.services.stress_calculator import calculate_stress_test
 from app.models.stress import StressTest
+from app.routers.portfolio import read_user_portfolio
 
 router = APIRouter(prefix="/api/stress", tags=["stress"])
 
@@ -25,16 +25,8 @@ async def get_stress_test(request: Request):
     Lee las posiciones actuales desde Firestore y aplica los escenarios definidos.
     """
     uid = request.state.uid
-    db  = firestore.client()
-
-    # Reconstruir el portfolio desde Firestore (mismo esquema que el frontend)
     categorias = ["acciones_ar", "cedears", "bonos", "ons", "fci", "liquidez"]
-    portfolio: dict = {}
-
-    port_ref = db.collection("users").document(uid).collection("portfolio")
-    for cat in categorias:
-        snap = port_ref.document(cat).get()
-        portfolio[cat] = snap.to_dict() if snap.exists else {"posiciones": [], "subtotal_ars": 0}
+    portfolio = read_user_portfolio(uid)
 
     if all(portfolio[c].get("subtotal_ars", 0) == 0 for c in categorias):
         raise HTTPException(

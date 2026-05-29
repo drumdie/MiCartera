@@ -7,7 +7,7 @@ import {
 } from '../data/mockPortfolio'
 import { useAuth }      from '../hooks/useAuth'
 import { usePortfolio } from '../hooks/usePortfolio'
-import { apiPost, apiGet } from '../services/apiClient'
+import { apiPost } from '../services/apiClient'
 
 export const AppContext = createContext(null)
 
@@ -55,6 +55,7 @@ export function AppProvider({ children }) {
     resumen:       fsResumen,
     catalizadores: fsCatalizadores,
     stressTest:    fsStressTest,
+    refreshPortfolio,
     refreshStress,
     fundamental:   fsFundamental,
     isStale:       fsIsStale,
@@ -96,8 +97,10 @@ export function AppProvider({ children }) {
       if (result.status === 'sin_datos_frescos') {
         setSyncError('Mercado cerrado — mostrando últimos datos conocidos')
         setLastSync(result.ultima_sync_exitosa ?? null)
+        await refreshPortfolio()
       } else {
         setLastSync(result.timestamp ?? new Date().toISOString())
+        await refreshPortfolio()
         await refreshStress()
       }
     } catch (err) {
@@ -105,7 +108,7 @@ export function AppProvider({ children }) {
     } finally {
       setSyncing(false)
     }
-  }, [user, refreshStress])
+  }, [user, refreshPortfolio, refreshStress])
 
   // Auto-sync al login: dispara una sola vez cuando el usuario se autentica.
   // Si el mercado está cerrado o PPI no responde, deja los últimos datos conocidos.
