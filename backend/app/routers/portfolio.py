@@ -413,12 +413,15 @@ async def sync_portfolio(request: Request, force_full: bool = False):
                     item = {**item, "averagePrice": round(avg_cost_calc / dolar_mep, 6)}
                 else:
                     item = {**item, "averagePrice": avg_cost_calc}
-        # Para acciones_ar: inyectar costo USD histórico (MEP al día de cada compra).
-        # Esto permite calcular rend_usd_pct y ganancia_usd_mep con el tipo de cambio real,
-        # no con el MEP de hoy (que sería incorrecto y subestimaría el costo de compra en USD).
-        if cat == "acciones_ar":
+        # Para acciones_ar, cedears, bonos y ons: inyectar costo USD histórico (MEP al día de
+        # cada compra). Permite calcular rend_usd_pct y ganancia_usd_mep con el tipo de cambio
+        # real, no con el MEP de hoy (que subestimaría el costo de compra en USD).
+        # Para bonos/ons: avg_costs_usd viene en unidades de 1 VN → escalar ×100 igual que avg_costs.
+        if cat in ("acciones_ar", "cedears", "bonos", "ons"):
             avg_usd = avg_costs_usd.get(ticker) or avg_costs_usd.get(ticker[:10])
             if avg_usd:
+                if cat in ("bonos", "ons"):
+                    avg_usd = round(avg_usd * 100, 6)
                 item = {**item, "averagePriceUSD": avg_usd}
 
         grupos_raw[cat].append(item)

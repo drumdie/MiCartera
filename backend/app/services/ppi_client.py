@@ -31,6 +31,10 @@ class PPIError(Exception):
 _mep_history_cache: dict[str, float] = {}   # {"2023-11-22": 987.5, ...}
 _mep_history_loaded: bool = False
 
+# Comisión PPI sobre compras: 0,6% + IVA 21% = 0,726%
+# Se suma al costo para que el avg_cost coincida con el del broker.
+_COMMISSION_BUY: float = 1 + 0.006 * 1.21
+
 
 async def _ensure_mep_history() -> dict[str, float]:
     """
@@ -355,8 +359,8 @@ class PPIClient:
                     unit_price_usd = (unit_price_ars / mep_dia) if mep_dia > 0 else 0.0
                     if m["amount"] < 0:                          # compra
                         acum[ticker]["qty"]            += m["qty"]
-                        acum[ticker]["total_cost"]     += m["qty"] * unit_price_ars
-                        acum[ticker]["total_cost_usd"] += m["qty"] * unit_price_usd
+                        acum[ticker]["total_cost"]     += m["qty"] * unit_price_ars * _COMMISSION_BUY
+                        acum[ticker]["total_cost_usd"] += m["qty"] * unit_price_usd * _COMMISSION_BUY
                     elif m["amount"] > 0 and acum[ticker]["qty"] > 0:  # venta parcial
                         avg_ars = acum[ticker]["total_cost"]     / acum[ticker]["qty"]
                         avg_usd = acum[ticker]["total_cost_usd"] / acum[ticker]["qty"]
@@ -387,8 +391,8 @@ class PPIClient:
                     unit_price_usd = (unit_price_ars / mep_dia) if mep_dia > 0 else 0.0
                     if m["amount"] < 0:                          # compra
                         acum[ticker]["qty"]            += m["qty"]
-                        acum[ticker]["total_cost"]     += m["qty"] * unit_price_ars
-                        acum[ticker]["total_cost_usd"] += m["qty"] * unit_price_usd
+                        acum[ticker]["total_cost"]     += m["qty"] * unit_price_ars * _COMMISSION_BUY
+                        acum[ticker]["total_cost_usd"] += m["qty"] * unit_price_usd * _COMMISSION_BUY
                         if acum[ticker]["qty"] > 0:
                             cur_avg_ars = acum[ticker]["total_cost"] / acum[ticker]["qty"]
                     elif m["amount"] > 0 and acum[ticker]["qty"] > 0:  # venta parcial

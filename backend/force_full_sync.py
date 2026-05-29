@@ -1,4 +1,4 @@
-"""
+r"""
 Script de utilidad: limpia el caché de avg_costs en Firestore para todos
 los usuarios, forzando que el próximo sync desde la app sea full_5y.
 
@@ -10,6 +10,11 @@ Después abrís la app y hacés sync normalmente — va a tardar ~15s (full_5y).
 """
 import sys
 import os
+
+# Forzar UTF-8 en la consola de Windows (evita UnicodeEncodeError con acentos/emojis)
+if sys.platform == "win32":
+    sys.stdout.reconfigure(encoding="utf-8")
+    sys.stderr.reconfigure(encoding="utf-8")
 
 # Resolver rutas desde el directorio del script
 BACKEND_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -52,10 +57,10 @@ def main():
     snap = ref.get()
     if snap.exists:
         ref.delete()
-        print(f"\n✅ Caché avg_costs eliminado para {uid}")
-        print("   El próximo sync desde la app va a recalcular todo desde 5 años (full_5y).")
+        print(f"\nOK: Caché avg_costs eliminado para {uid}")
+        print("    El próximo sync desde la app va a recalcular todo desde 5 años (full_5y).")
     else:
-        print(f"\n⚠️  No existía caché avg_costs para {uid} — ya era full sync.")
+        print(f"\nINFO: No existía caché avg_costs para {uid} — ya era full sync.")
 
 if __name__ == "__main__":
     main()
