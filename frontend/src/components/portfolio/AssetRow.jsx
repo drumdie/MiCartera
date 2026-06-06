@@ -12,23 +12,25 @@ export default function AssetRow({ position, expanded, onToggle, isCedear, isBon
   // Rendimiento del día → tr-mid (siempre visible)
   //
   // Regla de negocio (mercado argentino, UTC-3):
-  //   • Mercado abierto (isStale=false)         → intradiario actual
-  //   • Mercado cerrado, mismo día ≥ 11:00      → último intradiario de la rueda
-  //   • Después de 00:00 o fin de semana        → 0% (nuevo día sin rueda aún)
-  //   • Hora < 11:00 en día hábil               → 0% (mercado todavía no abrió)
+  //   • Fin de semana o antes de apertura (< 11:00 hs BA) → 0% (sin rueda hoy)
+  //   • Mercado abierto (isStale=false)                   → intradiario actual
+  //   • Mercado cerrado, mismo día ≥ 11:00                → último intradiario de la rueda
+  //
+  // IMPORTANTE: la verificación de día/hora va ANTES del flag isStale.
+  // is_stale en Firestore refleja el estado al momento del último sync, no el
+  // estado actual del mercado. Si el último sync fue viernes con mercado abierto,
+  // is_stale queda false → el sábado se leería como mercado abierto sin el check.
   const rendDia = (() => {
-    if (!isStale) return position.rend_dia_pct ?? null
-
-    // Mercado cerrado: determinar qué mostrar según la hora en Buenos Aires
     const bueStr = new Date().toLocaleString('en-US', { timeZone: 'America/Argentina/Buenos_Aires' })
     const bue    = new Date(bueStr)
     const dow    = bue.getDay()    // 0=Dom, 6=Sáb
     const hour   = bue.getHours()
 
-    // Fin de semana o antes de apertura (11:00): no hubo rueda hoy → 0%
+    // Fin de semana o antes de apertura (11:00 hs BA): sin rueda hoy → 0%
     if (dow === 0 || dow === 6 || hour < 11) return 0
 
-    // Día hábil ≥ 11:00: la rueda ocurrió hoy → mostrar el último intradiario
+    // Día hábil ≥ 11:00: mercado abierto → intradiario actual; cerrado → último de la rueda
+    if (!isStale) return position.rend_dia_pct ?? null
     return position.rend_dia_pct ?? 0
   })()
   const isDiaPos = rendDia == null || rendDia >= 0
@@ -163,6 +165,18 @@ export default function AssetRow({ position, expanded, onToggle, isCedear, isBon
               <div className="tg-label">Rend. Día</div>
               <div className={`tg-val ${rendDia >= 0 ? 'pos' : 'neg'}`}>
                 {formatPctShort(rendDia)}
+              </div>
+            </div>
+          )}
+
+          {/* Última variación de cierre: visible cuando hoy no hay rueda (finde / pre-apertura)
+              y hay un valor registrado de la sesión anterior. Permite ver el rendimiento del
+              último día hábil sin confundirlo con la variación de hoy. */}
+          {rendDia === 0 && position.rend_dia_pct != null && position.rend_dia_pct !== 0 && (
+            <div>
+              <div className="tg-label">Últ. Cierre</div>
+              <div className={`tg-val ${position.rend_dia_pct >= 0 ? 'pos' : 'neg'}`}>
+                {formatPctShort(position.rend_dia_pct)}
               </div>
             </div>
           )}

@@ -422,6 +422,19 @@ async def sync_portfolio(request: Request, force_full: bool = False):
             if avg_usd:
                 if cat in ("bonos", "ons"):
                     avg_usd = round(avg_usd * 100, 6)
+                # Ajuste por acciones corporativas (splits, cambios de ratio CEDEAR):
+                # igual que para avg_costs ARS, si qty acumulada en movimientos difiere de
+                # la qty actual en posición, el costo USD histórico se divide proporcionalmente.
+                # Ej: split 3:1 no reportado en movimientos → acum_qty=1, actual_qty=3
+                #     → avg_usd × (1/3) = precio por unidad post-split correcto.
+                # Si el split SÍ está en movimientos, acum_qty == actual_qty → sin efecto.
+                _actual_qty = float(item.get("quantity", item.get("Amount", 0)))
+                _acum_qty = (avg_costs_state.get("tickers") or {}).get(
+                    ticker,
+                    (avg_costs_state.get("tickers") or {}).get(ticker[:10], {})
+                ).get("qty", 0)
+                if _acum_qty > 0 and _actual_qty > 0 and abs(_acum_qty - _actual_qty) > 0.5:
+                    avg_usd = round(avg_usd * (_acum_qty / _actual_qty), 6)
                 item = {**item, "averagePriceUSD": avg_usd}
 
         grupos_raw[cat].append(item)
