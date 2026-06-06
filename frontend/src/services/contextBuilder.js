@@ -30,6 +30,82 @@ export function buildTacticalContext(portfolio, cotizaciones, resumen) {
   return lines.join('\n')
 }
 
+export function buildCatalystContext(portfolio, catalizadores) {
+  const lines = [
+    '# Catalizadores — MiCartera',
+    `Fecha: ${new Date().toLocaleDateString('es-AR')}`,
+    '',
+    '## Portfolio actual',
+    '',
+  ]
+
+  const allPositions = [
+    ...(portfolio?.acciones_ar?.posiciones ?? []).map(p => ({ ...p, _cat: 'Acción AR' })),
+    ...(portfolio?.cedears?.posiciones     ?? []).map(p => ({ ...p, _cat: 'CEDEAR'   })),
+    ...(portfolio?.bonos?.posiciones       ?? []).map(p => ({ ...p, _cat: 'Bono'     })),
+    ...(portfolio?.ons?.posiciones         ?? []).map(p => ({ ...p, _cat: 'ON'       })),
+  ]
+
+  if (allPositions.length === 0) {
+    lines.push('(Sin posiciones cargadas aún)')
+  } else {
+    allPositions.forEach(p => {
+      const rend   = p.rend_usd_pct != null ? ` · ${p.rend_usd_pct >= 0 ? '+' : ''}${p.rend_usd_pct}% USD` : ''
+      const accion = p.accion_tactica ? ` · ${p.accion_tactica}` : ''
+      lines.push(`- [${p._cat}] ${p.ticker}: ${p.descripcion || ''}${rend}${accion}`)
+    })
+  }
+
+  lines.push('')
+  lines.push('## Catalizadores actualmente registrados')
+  lines.push('')
+
+  if (!catalizadores || catalizadores.length === 0) {
+    lines.push('(Sin catalizadores registrados aún)')
+  } else {
+    catalizadores.forEach(c => {
+      const statusKey = c.estado ?? c.urgencia ?? 'far'
+      const tickers   = [...new Set([...(c.tickers ?? []), ...(c.tickers_afectados ?? [])])].join(', ')
+      lines.push(`[${c.fecha}] ${c.evento}${tickers ? ' · ' + tickers : ''} (${statusKey})`)
+      const desc = c.descripcion || c.desc
+      if (desc) lines.push(`  ${desc}`)
+      if (c.resultado) lines.push(`  Resultado: ${c.resultado}`)
+    })
+  }
+
+  lines.push('')
+  lines.push('---')
+  lines.push('Actualizá o completá la lista de catalizadores para esta cartera.')
+  lines.push('Devolvé SOLO el JSON con este schema exacto (sin texto adicional):')
+  lines.push('')
+  lines.push('```json')
+  lines.push('{')
+  lines.push('  "catalizadores": [')
+  lines.push('    {')
+  lines.push('      "fecha": "2026-08-26",')
+  lines.push('      "evento": "Nombre del evento",')
+  lines.push('      "tickers": ["TICKER1", "TICKER2"],')
+  lines.push('      "estado": "done",')
+  lines.push('      "descripcion": "Descripción breve (para eventos pendientes)",')
+  lines.push('      "resultado": "Resultado real (solo para estado done)"')
+  lines.push('    }')
+  lines.push('  ]')
+  lines.push('}')
+  lines.push('```')
+  lines.push('')
+  lines.push('Valores de estado:')
+  lines.push('  "done"       — ya ocurrió, incluir resultado')
+  lines.push('  "near"       — próximos ~3 meses')
+  lines.push('  "structural" — catalizador estructural sin fecha fija')
+  lines.push('  "far"        — largo plazo (>3 meses o 2027+)')
+  lines.push('')
+  lines.push('Formato de fecha: ISO 8601 (YYYY-MM-DD) si es fecha exacta;')
+  lines.push('string descriptivo ("Est. Jul 2026", "Q2–Q3 2026") si es aproximada.')
+  lines.push('Incluí todos los eventos relevantes (pasados y futuros) para los tickers del portfolio.')
+
+  return lines.join('\n')
+}
+
 export function buildFundamentalContext(fundamental) {
   const lines = [
     '# Análisis fundamental — MiCartera',

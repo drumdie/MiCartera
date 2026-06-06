@@ -4,7 +4,7 @@ import { usePrivacy } from '../hooks/usePrivacy'
 import { formatARS, formatUSD } from '../utils/formatters'
 import { TICKERS_TV } from '../data/mockPortfolio'
 import { apiPost } from '../services/apiClient'
-import { addCatalyst, deleteCatalyst } from '../services/portfolioService'
+import { addCatalyst, deleteCatalyst, replaceCatalysts } from '../services/portfolioService'
 
 import Header          from '../components/layout/Header'
 import CurrencyToggle  from '../components/layout/CurrencyToggle'
@@ -124,6 +124,18 @@ export default function Dashboard() {
       showToast('Evento eliminado')
     } catch {
       showToast('Error al eliminar el evento')
+    }
+  }
+
+  // Carga catalizadores desde JSON de Claude (reemplaza la lista completa)
+  const handleCatalystLoad = async (jsonStr) => {
+    try {
+      const parsed   = JSON.parse(jsonStr)
+      const catalysts = parsed.catalizadores ?? (Array.isArray(parsed) ? parsed : [parsed])
+      await replaceCatalysts(user.uid, catalysts)
+      showToast(`✓ ${catalysts.length} catalizadores cargados`)
+    } catch (err) {
+      showToast(`Error al cargar catalizadores: ${err.message}`)
     }
   }
 
@@ -453,7 +465,7 @@ export default function Dashboard() {
           <div className="cat-empty">
             {isDemo
               ? 'Modo demo — los eventos reales aparecen al iniciar sesión'
-              : 'No hay eventos cargados. Usá "+ Agregar" para registrar earnings, vencimientos, etc.'}
+              : 'No hay eventos cargados. Usá "+ Agregar" o cargá desde Claude.'}
           </div>
         ) : (
           <div className="timeline">
@@ -474,6 +486,22 @@ export default function Dashboard() {
               ))
             }
           </div>
+        )}
+
+        {/* Herramientas Claude — workflow copy/paste para actualizar catalizadores */}
+        {!isDemo && (
+          <>
+            <div className="sec-title" style={{ marginTop: 24 }}>Herramientas Claude</div>
+            <div className="action-btns">
+              <CopyContextBtn tipo="catalizadores" onToast={showToast} />
+              <PasteResultArea
+                id="paste-cat"
+                label="Cargar catalizadores Claude"
+                sub="Pegá el JSON de Claude — reemplaza la lista completa"
+                onLoad={handleCatalystLoad}
+              />
+            </div>
+          </>
         )}
       </div>
 

@@ -1,12 +1,14 @@
 import { useApp } from '../../store/AppContext'
-import { buildTacticalContext, buildFundamentalContext } from '../../services/contextBuilder'
+import { buildTacticalContext, buildFundamentalContext, buildCatalystContext } from '../../services/contextBuilder'
 
 export default function CopyContextBtn({ tipo = 'tactico', onToast }) {
-  const { portfolio, cotizaciones, resumen, fundamental } = useApp()
+  const { portfolio, cotizaciones, resumen, fundamental, catalizadores } = useApp()
 
   const handleCopy = () => {
     const text = tipo === 'fundamental'
       ? buildFundamentalContext(fundamental)
+      : tipo === 'catalizadores'
+      ? buildCatalystContext(portfolio, catalizadores)
       : buildTacticalContext(portfolio, cotizaciones, resumen)
 
     navigator.clipboard.writeText(text)
@@ -15,8 +17,9 @@ export default function CopyContextBtn({ tipo = 'tactico', onToast }) {
   }
 
   const labels = {
-    tactico:     { title: 'Copiar contexto táctico',   sub: 'Texto listo para pegar en Claude.ai' },
-    fundamental: { title: 'Copiar prompt fundamental', sub: 'Prompt completo para pegar en Claude.ai' },
+    tactico:       { title: 'Copiar contexto táctico',       sub: 'Texto listo para pegar en Claude.ai' },
+    fundamental:   { title: 'Copiar prompt fundamental',     sub: 'Prompt completo para pegar en Claude.ai' },
+    catalizadores: { title: 'Copiar contexto catalizadores', sub: 'Cartera + eventos actuales para pegar en Claude.ai' },
   }
   const { title, sub } = labels[tipo] ?? labels.tactico
 

@@ -42,3 +42,9 @@ export async function deleteCatalyst(uid, catalyst) {
   const ref = doc(db, 'users', uid, 'catalysts', 'data')
   await updateDoc(ref, { proximos: arrayRemove(catalyst) })
 }
+
+// Reemplaza TODA la lista de catalizadores (usado por el workflow paste de Claude)
+export async function replaceCatalysts(uid, catalysts) {
+  const ref = doc(db, 'users', uid, 'catalysts', 'data')
+  await setDoc(ref, { proximos: catalysts })
+}
