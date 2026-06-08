@@ -157,6 +157,7 @@ body::before {
 .stress-drop { font-family: 'IBM Plex Mono', monospace; font-size: 26px; font-weight: 600; line-height: 1; margin-bottom: 2px; }
 .stress-card.danger .stress-drop { color: var(--red); }
 .stress-card.warn   .stress-drop { color: var(--warn); }
+.stress-card.pos    .stress-drop { color: var(--buy); }
 .stress-supuesto { font-size: 8px; color: var(--accent); text-transform: uppercase; letter-spacing: .06em; line-height: 1.4; }
 .stress-desc { font-size: 9px; color: var(--muted2); line-height: 1.5; margin-top: 2px; }
 .stress-meta { display: flex; gap: 5px; align-items: baseline; flex-wrap: wrap; margin-top: 3px; }

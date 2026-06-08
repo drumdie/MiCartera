@@ -122,7 +122,7 @@ function computeResumen(portfolio) {
 // Derivar tipo visual desde impacto porcentual (para StressCard CSS class)
 function withTipo(escenario) {
   const pct = escenario.impacto_cartera_pct ?? 0
-  const tipo = pct < -10 ? 'danger' : pct < 0 ? 'warn' : ''
+  const tipo = pct < -10 ? 'danger' : pct < 0 ? 'warn' : 'pos'
   return { ...escenario, tipo }
 }
 
