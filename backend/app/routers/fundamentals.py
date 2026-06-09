@@ -26,6 +26,7 @@ from fastapi import APIRouter, Request
 from firebase_admin import firestore
 
 from app.routers.portfolio import read_user_portfolio
+from app.services.ppi_client import ppi_client
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/fundamentals", tags=["fundamentals"])
@@ -60,8 +61,24 @@ def _fmt_x(val: float | None) -> str | None:
 
 
 def _q_ev_ebitda(v: float | None) -> str:
-    if v is None: return "neutral"
+    if v is None or v > 100:   # >100x: casi seguro dato corrupto / mezcla de monedas
+        return "neutral"
     return "good" if v < 8 else "warn" if v < 20 else "danger"
+
+
+def _to_usd(valor: float | None, moneda: str | None, dolar_mep: float) -> float | None:
+    """Convierte un importe absoluto a USD según su moneda de origen.
+    - moneda == "USD" (o vacía): se asume ya en USD, se devuelve igual.
+    - moneda == "ARS" (u otra local): se divide por el MEP.
+    Si no se puede convertir con confianza (MEP no disponible), devuelve None.
+    """
+    if valor is None:
+        return None
+    if not moneda or moneda.upper() == "USD":
+        return valor
+    if dolar_mep <= 0:
+        return None
+    return valor / dolar_mep
 
 
 def _q_pe(v: float | None) -> str:
@@ -103,6 +120,14 @@ _YF_TO_TV: dict[str, str] = {
 }
 
 
+# CEDEARs cuyo ticker en PPI difiere del símbolo en Yahoo Finance.
+# PPI no expone el subyacente, así que por defecto se usa el propio ticker del
+# CEDEAR (que coincide con el símbolo US en la mayoría: GOOGL, DIA, BBD, AAPL...).
+# Solo agregar acá las excepciones que el log "sin datos de Yahoo" vaya revelando.
+# Ej: "BRKB": "BRK-B"
+_CEDEAR_OVERRIDE: dict[str, str] = {}
+
+
 def _tv_symbol(info: dict, ticker: str, categoria: str, subyacente: str | None) -> str:
     """Devuelve el símbolo en formato TradingView (p.ej. NASDAQ:MELI, BCBA:ALUA)."""
     if categoria == "accion_ar":
@@ -131,19 +156,56 @@ def _fetch_yf_sync(yf_ticker: str) -> dict:
 
 
 def _build_fundamental(info: dict, ticker: str, descripcion: str, categoria: str,
-                        subyacente: str | None, yf_ticker: str) -> dict:
-    """Transforma el info dict de yfinance al schema de Firestore."""
-    ebitda      = info.get("ebitda")
-    ev_ebitda   = info.get("enterpriseToEbitda")
+                        subyacente: str | None, yf_ticker: str, dolar_mep: float = 0.0) -> dict:
+    """Transforma el info dict de yfinance al schema de Firestore.
+
+    Manejo de monedas (clave para tickers .BA): yfinance expone DOS monedas que
+    pueden NO coincidir:
+      - info["currency"]          → moneda de cotización (marketCap, enterpriseValue)
+      - info["financialCurrency"] → moneda de los estados (ebitda, totalDebt, ingresos)
+    Para empresas argentinas 'currency' suele ser ARS y 'financialCurrency' puede
+    ser ARS o USD (ej: PAMP reporta en USD). _fmt_usd() asume USD, así que se
+    convierte cada importe con SU moneda antes de formatear y se recalcula EV/EBITDA
+    con ambos ya en USD (el enterpriseToEbitda de Yahoo mezcla monedas → 8564x).
+    """
+    moneda_mkt  = info.get("currency")           # cotización → marketCap, enterpriseValue
+    moneda_fin  = info.get("financialCurrency")  # estados    → ebitda, deuda, ingresos
+    sector      = info.get("sector")
+
+    ebitda_raw  = info.get("ebitda")
     mg_ebitda   = info.get("ebitdaMargins")
     pe_trail    = info.get("trailingPE")
     pe_fwd      = info.get("forwardPE")
     roe         = info.get("returnOnEquity")
     rev_growth  = info.get("revenueGrowth")
     gross_mg    = info.get("grossMargins")
-    total_debt  = info.get("totalDebt")
 
-    # Deuda/EBITDA derivado
+    # Convertir importes absolutos a USD, cada uno con su moneda de origen
+    market_cap  = _to_usd(info.get("marketCap"),       moneda_mkt, dolar_mep)
+    ent_value   = _to_usd(info.get("enterpriseValue"), moneda_mkt, dolar_mep)
+    ebitda      = _to_usd(ebitda_raw,                  moneda_fin, dolar_mep)
+    total_debt  = _to_usd(info.get("totalDebt"),       moneda_fin, dolar_mep)
+
+    # EBITDA / margen: para FINANCIERAS (bancos) EBITDA no es métrica estándar → "no aplica".
+    # Para el resto: mostrar el EBITDA si yfinance lo trae (incluso negativo, ej. mineras
+    # pre-ganancia como LAR); si falta queda None y la card lo oculta. yfinance devuelve
+    # ebitdaMargins=0.0 como sentinela de "sin dato" → 0.0 se trata como None (no "0.0%").
+    es_financiero = (sector == "Financial Services")
+    if es_financiero:
+        ebitda_str = "N/A — no aplica"
+        mg_str     = "N/A — no aplica"
+    else:
+        ebitda_str = _fmt_usd(ebitda)
+        mg_str     = _fmt_pct(mg_ebitda) if mg_ebitda else None
+
+    # EV/EBITDA recalculado con ambos ya en USD. Si falta dato → None.
+    ev_ebitda: float | None = None
+    if ent_value and ebitda and ebitda > 0:
+        ev_ebitda = round(ent_value / ebitda, 1)
+        if ev_ebitda > 100:           # red de seguridad ante datos inconsistentes
+            ev_ebitda = None
+
+    # Deuda/EBITDA: ambos en la misma moneda (moneda_fin) → ratio válido
     debt_ebitda: float | None = None
     if total_debt and ebitda and ebitda > 0:
         debt_ebitda = round(total_debt / ebitda, 1)
@@ -171,12 +233,12 @@ def _build_fundamental(info: dict, ticker: str, descripcion: str, categoria: str
         "subyacente_usd": subyacente,
         "yf_ticker":     yf_ticker,
         "tv_symbol":     _tv_symbol(info, ticker, categoria, subyacente),
-        "market_cap":    _fmt_usd(info.get("marketCap")),
+        "market_cap":    _fmt_usd(market_cap),
         # Métricas clave
-        "ebitda_ttm":        _fmt_usd(ebitda),
+        "ebitda_ttm":        ebitda_str,
         "ev_ebitda":         _fmt_x(ev_ebitda),
         "ev_ebitda_quality": _q_ev_ebitda(ev_ebitda),
-        "mg_ebitda":         _fmt_pct(mg_ebitda),
+        "mg_ebitda":         mg_str,
         "ratios":            ratios,
         # Campos Claude — null por defecto; se llenan via /analysis
         "accion_tactica": None,
@@ -190,12 +252,13 @@ def _build_fundamental(info: dict, ticker: str, descripcion: str, categoria: str
 
 
 async def _fetch_one(yf_ticker: str, ticker: str, descripcion: str,
-                     categoria: str, subyacente: str | None) -> dict | None:
+                     categoria: str, subyacente: str | None,
+                     dolar_mep: float = 0.0) -> dict | None:
     loop = asyncio.get_event_loop()
     info = await loop.run_in_executor(None, _fetch_yf_sync, yf_ticker)
     if not info:
         return None
-    return _build_fundamental(info, ticker, descripcion, categoria, subyacente, yf_ticker)
+    return _build_fundamental(info, ticker, descripcion, categoria, subyacente, yf_ticker, dolar_mep)
 
 
 # ---------------------------------------------------------------------------
@@ -215,13 +278,30 @@ async def refresh_fundamentals(request: Request):
 
     portfolio = read_user_portfolio(uid)
 
+    # MEP spot para convertir a USD las métricas de empresas .BA reportadas en ARS.
+    # Mismo patrón que sync_portfolio: Firestore /market/cotizaciones → PPI.
+    cotiz_snap = db.collection("market").document("cotizaciones").get()
+    cotiz      = cotiz_snap.to_dict() if cotiz_snap.exists else {}
+    dolar_mep  = float(cotiz.get("dolar_mep") or 0)
+    if dolar_mep <= 0:
+        try:
+            dolar_mep = await ppi_client.get_dolar_mep()
+        except Exception:
+            dolar_mep = 0.0
+
     # (yf_ticker, ticker, descripcion, categoria, subyacente)
     tasks: list[tuple] = []
 
     for pos in (portfolio.get("cedears", {}).get("posiciones") or []):
-        sub = pos.get("subyacente_usd") or pos.get("subyacente")
+        ticker = pos.get("ticker", "")
+        # PPI no expone el subyacente del CEDEAR. El ticker que da PPI ya ES el
+        # símbolo de Yahoo en la mayoría de los casos (GOOGL, DIA, BBD...). Preferencia:
+        #   1) subyacente_usd si alguna vez viniera poblado
+        #   2) override estático para los pocos tickers que difieren del símbolo US
+        #   3) el propio ticker como default
+        sub = pos.get("subyacente_usd") or _CEDEAR_OVERRIDE.get(ticker) or ticker
         if sub:
-            tasks.append((sub, pos.get("ticker", sub), pos.get("descripcion", ""), "cedear", sub))
+            tasks.append((sub, ticker or sub, pos.get("descripcion", ""), "cedear", sub))
 
     for pos in (portfolio.get("acciones_ar", {}).get("posiciones") or []):
         t = pos.get("ticker", "")
@@ -234,18 +314,27 @@ async def refresh_fundamentals(request: Request):
     # Fetch en lotes de 5 simultáneos para no saturar Yahoo Finance
     BATCH = 5
     results: list[dict] = []
+    sin_datos_tickers: list[str] = []
     for i in range(0, len(tasks), BATCH):
         batch = tasks[i:i + BATCH]
         batch_res = await asyncio.gather(
-            *[_fetch_one(*t) for t in batch],
+            *[_fetch_one(*t, dolar_mep=dolar_mep) for t in batch],
             return_exceptions=True,
         )
-        for res in batch_res:
+        for t, res in zip(batch, batch_res):
             if isinstance(res, dict):
                 results.append(res)
+            else:
+                # t = (yf_ticker, ticker, descripcion, categoria, subyacente)
+                sin_datos_tickers.append(t[1])
+                logger.warning(
+                    "Fundamentales: sin datos de Yahoo para %s (cat=%s, símbolo=%s)%s",
+                    t[1], t[3], t[0],
+                    f" — {res!r}" if isinstance(res, Exception) else "",
+                )
 
     fund_col = ref.collection("fundamentals")
-    ok, sin_datos = 0, len(tasks) - len(results)
+    ok = 0
     for fund in results:
         t = fund.get("ticker")
         if not t:
@@ -260,7 +349,8 @@ async def refresh_fundamentals(request: Request):
     return {
         "status":               "ok",
         "tickers_actualizados": ok,
-        "tickers_sin_datos":    sin_datos,
+        "tickers_sin_datos":    len(sin_datos_tickers),
+        "sin_datos_detalle":    sin_datos_tickers,
         "detalle":              [r.get("ticker") for r in results],
     }
 

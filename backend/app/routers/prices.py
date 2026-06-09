@@ -75,15 +75,12 @@ async def _fetch_dolarapi(slug: str) -> float:
 async def _fetch_riesgo_pais() -> int:
     """
     Riesgo país (EMBI+ Argentina) en puntos básicos.
-    Fuente primaria: BCRA variable 5.
-    Fallback: api.argentinadatos.com (actualizado diariamente).
+    Fuente primaria: api.argentinadatos.com (coincide con infobae/ámbito; ~1-2 días
+    hábiles de rezago). Es la MISMA serie que usamos para el mínimo histórico, así que
+    el valor mostrado y el "mín desde" quedan consistentes.
+    Fallback: BCRA variable 5 (suele estar más desfasada del valor de mercado).
     """
-    # Intento 1: BCRA
-    valor = await _fetch_bcra_variable(_VAR_RIESGO_PAIS)
-    if valor > 0:
-        return int(valor)
-
-    # Intento 2: argentinadatos.com
+    # Intento 1: argentinadatos.com (último punto de la serie)
     try:
         async with httpx.AsyncClient(timeout=8) as client:
             resp = await client.get("https://api.argentinadatos.com/v1/finanzas/indices/riesgo-pais")
@@ -91,10 +88,110 @@ async def _fetch_riesgo_pais() -> int:
                 data = resp.json()
                 # Devuelve lista [{fecha, valor}] ordenada por fecha ASC
                 if isinstance(data, list) and data:
-                    return int(data[-1].get("valor", 0))
+                    valor = int(data[-1].get("valor", 0) or 0)
+                    if valor > 0:
+                        return valor
     except Exception as exc:
         print(f"[ARGENTINADATOS] Error riesgo país: {exc}")
+
+    # Intento 2 (fallback): BCRA variable 5
+    valor = await _fetch_bcra_variable(_VAR_RIESGO_PAIS)
+    if valor > 0:
+        return int(valor)
     return 0
+
+
+# Nombres de meses en español para formatear la fecha del mínimo
+_MESES_ES = {
+    1: "ene", 2: "feb", 3: "mar", 4: "abr",
+    5: "may", 6: "jun", 7: "jul", 8: "ago",
+    9: "sep", 10: "oct", 11: "nov", 12: "dic",
+}
+
+
+def _calcular_minimo_riesgo_pais(serie: list[dict], valor_actual: int) -> tuple[int | None, str | None]:
+    """
+    Dada la serie histórica [{fecha: str, valor: number}, ...] ordenada ASC
+    y el valor actual, calcula:
+      - riesgo_pais_min: el mínimo del período reciente (= el valor actual, que
+        es el más bajo del tramo en que no estuvo más bajo)
+      - riesgo_pais_min_desde: mes/año desde el cual el valor no había sido tan
+        bajo (ej: "feb 2026"). Se determina buscando el tramo más reciente en que
+        el valor se mantuvo >= al actual; "desde" = el primer mes de ese tramo.
+
+    Retorna (None, None) si la serie está vacía o tiene menos de 2 puntos.
+    """
+    if not serie or len(serie) < 2:
+        return None, None
+
+    # Filtrar entradas válidas
+    puntos = []
+    for entrada in serie:
+        try:
+            fecha_str = entrada.get("fecha", "")
+            valor = int(entrada.get("valor", 0) or 0)
+            if fecha_str and valor > 0:
+                puntos.append((fecha_str, valor))
+        except (ValueError, TypeError):
+            continue
+
+    if not puntos:
+        return None, None
+
+    # Tramo más reciente en que el valor se mantuvo SIEMPRE >= al actual (sin haber
+    # estado más bajo). El "desde" = fecha del primer punto de ese tramo; el mínimo
+    # del tramo es, por construcción, el propio valor_actual.
+    fecha_desde_str = puntos[-1][0]
+    for fecha_str, valor in reversed(puntos[:-1]):  # excluir el último (= valor actual)
+        if valor < valor_actual:
+            break
+        fecha_desde_str = fecha_str
+
+    # Formatear como "feb 2026" usando la fecha real del inicio del tramo
+    # (sin aritmética de meses → nunca cae en un mes futuro).
+    try:
+        anio_f, mes_f = int(fecha_desde_str[:4]), int(fecha_desde_str[5:7])
+        min_desde = f"{_MESES_ES.get(mes_f, str(mes_f))} {anio_f}"
+    except Exception:
+        min_desde = fecha_desde_str
+
+    return valor_actual, min_desde
+
+
+async def _fetch_riesgo_pais_historico() -> tuple[int | None, str | None]:
+    """
+    Descarga la serie histórica de riesgo país desde argentinadatos.com
+    y calcula riesgo_pais_min y riesgo_pais_min_desde.
+    Retorna (None, None) si falla o no hay datos suficientes.
+    """
+    try:
+        async with httpx.AsyncClient(timeout=12) as client:
+            resp = await client.get(
+                "https://api.argentinadatos.com/v1/finanzas/indices/riesgo-pais"
+            )
+            if not resp.is_success:
+                print(f"[ARGENTINADATOS] Serie histórica HTTP {resp.status_code}")
+                return None, None
+
+            serie = resp.json()
+            if not isinstance(serie, list) or len(serie) < 2:
+                print("[ARGENTINADATOS] Serie histórica vacía o insuficiente")
+                return None, None
+
+            # Valor actual = último punto de la serie (ordenada ASC)
+            try:
+                valor_actual = int(serie[-1].get("valor", 0) or 0)
+            except (ValueError, TypeError):
+                return None, None
+
+            if valor_actual <= 0:
+                return None, None
+
+            return _calcular_minimo_riesgo_pais(serie, valor_actual)
+
+    except Exception as exc:
+        print(f"[ARGENTINADATOS] Error descargando serie histórica: {exc}")
+        return None, None
 
 
 async def _build_cotizaciones() -> dict:
@@ -106,7 +203,8 @@ async def _build_cotizaciones() -> dict:
       CCL:     PPI (GD30÷GD30D)     → ídem
       BNA:     BCRA variable 1      → fuente oficial
       Oficial: BCRA variable 4      → fuente oficial
-      RP:      BCRA var 5 / argentinadatos.com
+      RP:      BCRA var 5 / argentinadatos.com (actual)
+      RP hist: argentinadatos.com (serie completa → min + min_desde)
 
     Cuando el mercado está cerrado (fin de semana), PPI devuelve 0 y
     el endpoint /refresh preserva el último valor conocido de Firestore.
@@ -123,14 +221,15 @@ async def _build_cotizaciones() -> dict:
     if ccl <= 0:
         ccl = await _fetch_dolarapi("contadoconliqui")
 
-    # BNA y Oficial: solo BCRA los publica (PPI no los expone)
-    bna, oficial, riesgo = await asyncio.gather(
+    # BNA, Oficial, Riesgo país actual y serie histórica en paralelo
+    bna, oficial, riesgo, (rp_min, rp_min_desde) = await asyncio.gather(
         _fetch_bcra_variable(_VAR_DOLAR_BNA),
         _fetch_bcra_variable(_VAR_DOLAR_OFICIAL),
         _fetch_riesgo_pais(),
+        _fetch_riesgo_pais_historico(),
     )
 
-    return {
+    doc: dict = {
         "dolar_mep":            mep,
         "dolar_ccl":            ccl,
         "dolar_bna":            bna,
@@ -138,6 +237,14 @@ async def _build_cotizaciones() -> dict:
         "riesgo_pais_pb":       riesgo,
         "ultima_actualizacion": datetime.now(timezone.utc).isoformat(),
     }
+
+    # Campos históricos: solo se escriben si el cálculo tuvo éxito
+    if rp_min is not None:
+        doc["riesgo_pais_min"] = rp_min
+    if rp_min_desde is not None:
+        doc["riesgo_pais_min_desde"] = rp_min_desde
+
+    return doc
 
 
 async def _safe_ppi_dolar(fn) -> float:
@@ -209,6 +316,11 @@ async def refresh_cotizaciones(request: Request):
     _NUMERIC_FIELDS = ["dolar_mep", "dolar_ccl", "dolar_bna", "dolar_oficial", "riesgo_pais_pb"]
     for field in _NUMERIC_FIELDS:
         if not data.get(field) and existing.get(field):
+            data[field] = existing[field]
+
+    # Campos históricos: si el cálculo falló esta vez, preservar el valor previo de Firestore
+    for field in ["riesgo_pais_min", "riesgo_pais_min_desde"]:
+        if data.get(field) is None and existing.get(field) is not None:
             data[field] = existing[field]
 
     ref.set(data)

@@ -38,10 +38,30 @@ const EMPTY_RESUMEN = {
   rend_30d_ars_pct: 0,
 }
 
+// Privacidad: se persiste en localStorage para que el toggle 👁/🙈 sobreviva
+// a F5, cerrar pestaña o cerrar/reabrir la PWA (persiste por origen, no por sesión).
+const PRIVACY_KEY = 'micartera_privacy_on'
+
+function loadPrivacy() {
+  try {
+    return localStorage.getItem(PRIVACY_KEY) === '1'
+  } catch {
+    return false
+  }
+}
+
 export function AppProvider({ children }) {
   const [activeCurrency, setActiveCurrency] = useState('MEP')
-  const [privacyOn,      setPrivacyOn]      = useState(false)
+  const [privacyOn,      setPrivacyOn]      = useState(loadPrivacy)
   const [distMode,       setDistMode]       = useState('instrumento')
+
+  useEffect(() => {
+    try {
+      localStorage.setItem(PRIVACY_KEY, privacyOn ? '1' : '0')
+    } catch {
+      // localStorage no disponible (modo privado/cuotas) → degradar sin persistencia
+    }
+  }, [privacyOn])
 
   const [syncing,   setSyncing]   = useState(false)
   const [syncError, setSyncError] = useState(null)

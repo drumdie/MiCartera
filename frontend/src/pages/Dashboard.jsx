@@ -245,6 +245,47 @@ export default function Dashboard() {
     (portfolio?.ons?.posiciones?.length         ?? 0) +
     (portfolio?.fci?.posiciones?.length         ?? 0)
 
+  // ── Mayor posición (excluye liquidez, que no tiene ticker negociable) ──────
+  const todasLasPosiciones = [
+    ...(portfolio?.acciones_ar?.posiciones ?? []),
+    ...(portfolio?.cedears?.posiciones     ?? []),
+    ...(portfolio?.bonos?.posiciones       ?? []),
+    ...(portfolio?.ons?.posiciones         ?? []),
+    ...(portfolio?.fci?.posiciones         ?? []),
+  ]
+  const mayorPos = todasLasPosiciones.reduce((max, p) => {
+    const val = p.valor_corriente_ars ?? 0
+    return val > (max?.valor_corriente_ars ?? 0) ? p : max
+  }, null)
+  const mayorPosTicker  = mayorPos?.ticker ?? '—'
+  const mayorPosARS     = mayorPos?.valor_corriente_ars ?? 0
+  const mayorPosUSD     = cotizaciones.dolar_mep > 0
+    ? Math.round(mayorPosARS / cotizaciones.dolar_mep)
+    : 0
+  // Usamos pct_cartera calculado por computePortfolio si existe; si no, calculamos
+  const mayorPosPct     = mayorPos?.pct_cartera != null
+    ? mayorPos.pct_cartera
+    : (resumen?.valor_total_ars > 0 ? (mayorPosARS / resumen.valor_total_ars) * 100 : 0)
+
+  // ── G/P total USD ─────────────────────────────────────────────────────────
+  const gpUSD          = resumen?.ganancia_total_usd ?? null
+  const gpUSDPos       = gpUSD != null && gpUSD >= 0
+  const gpUSDSigNo     = gpUSD != null ? (gpUSDPos ? '+' : '') : ''
+  // Preferir el invertido USD histórico exacto (MEP del día de cada compra);
+  // si no está disponible, caer al proxy costo_ars / MEP_hoy.
+  const invertidoUSD   = resumen?.costo_total_usd_historico != null
+    ? Math.round(resumen.costo_total_usd_historico)
+    : (cotizaciones.dolar_mep > 0 && (resumen?.costo_total_ars ?? 0) > 0
+        ? Math.round(resumen.costo_total_ars / cotizaciones.dolar_mep)
+        : null)
+
+  // ── Riesgo país ───────────────────────────────────────────────────────────
+  const riesgoPaisPb       = cotizaciones?.riesgo_pais_pb       ?? null
+  const riesgoPaisMinDesde = cotizaciones?.riesgo_pais_min_desde ?? null
+  const riesgoPaisMin      = cotizaciones?.riesgo_pais_min       ?? null
+  // Verde si el valor actual es mínimo histórico (o está en él)
+  const riesgoPaisEsMin    = riesgoPaisPb != null && riesgoPaisMin != null && riesgoPaisPb <= riesgoPaisMin
+
   return (
     <div className="app">
       <Header onSyncDone={showToast} />
@@ -307,6 +348,41 @@ export default function Dashboard() {
           label="Posiciones"
           value={String(totalTickers + portfolio.liquidez.detalle.length)}
           sub={`5 categorías · ${totalTickers} tickers`}
+        />
+
+        {/* Mayor posición: ticker con mayor valor corriente en ARS */}
+        <KPICard
+          label="Mayor posición"
+          value={mayorPos
+            ? <>{mayorPosTicker} · <PrivacyMask>US$ {mayorPosUSD.toLocaleString('es-AR')}</PrivacyMask></>
+            : '—'}
+          sub={mayorPos
+            ? `${mayorPosPct.toFixed(1).replace('.', ',')}% del portafolio`
+            : 'sin posiciones'}
+        />
+
+        {/* G/P total USD: ganancia/pérdida acumulada en dólares MEP */}
+        <KPICard
+          label="G/P total USD"
+          value={gpUSD != null
+            ? <><PrivacyMask>{gpUSDSigNo}US$ {Math.round(gpUSD).toLocaleString('es-AR')}</PrivacyMask></>
+            : 'N/D'}
+          sub={gpUSD != null && invertidoUSD != null
+            ? <PrivacyMask>sobre US$ {invertidoUSD.toLocaleString('es-AR')} invertidos</PrivacyMask>
+            : 'sin datos de costo'}
+          className={gpUSD != null ? (gpUSDPos ? 'pos' : 'neg') : ''}
+        />
+
+        {/* Riesgo país en puntos básicos (dato de /market/cotizaciones) */}
+        <KPICard
+          label="Riesgo país"
+          value={riesgoPaisPb != null
+            ? `${riesgoPaisPb.toLocaleString('es-AR')} pb`
+            : 'N/D'}
+          sub={riesgoPaisMinDesde
+            ? `mín desde ${riesgoPaisMinDesde}`
+            : undefined}
+          className={riesgoPaisEsMin ? 'pos' : ''}
         />
       </div>
 

@@ -29,7 +29,9 @@ export default defineConfig({
   ],
   server: {
     port: 5173,
-    // En desarrollo, el frontend proxea las llamadas al backend local
+    host: true,   // expone en 0.0.0.0 → accesible desde cualquier dispositivo en la misma red WiFi
+    // En desarrollo, el frontend proxea las llamadas al backend local.
+    // El teléfono solo habla con Vite; Vite reenvía /api al backend transparentemente.
     proxy: {
       '/api': {
         target: 'http://localhost:8000',

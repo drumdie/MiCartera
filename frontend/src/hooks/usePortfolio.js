@@ -98,6 +98,13 @@ function computeResumen(portfolio) {
   const gananciaARSClean = rendARS !== null ? totalGananciaARS : null
   const gananciaUSDClean = rendUSD !== null ? totalGananciaUSD : null
 
+  // Invertido USD histórico exacto: costo en USD usando el MEP del día de cada compra
+  // (no el proxy costo_ars/MEP_hoy). Derivado: costo_usd = valor_actual_usd − ganancia_usd,
+  // con valor_actual_usd (invertido) = (costo_ars + ganancia_ars) / MEP_hoy.
+  const costoUSDHist = (dolar_mep > 0 && gananciaUSDClean !== null)
+    ? parseFloat((((totalCostoARS + totalGananciaARS) / dolar_mep) - totalGananciaUSD).toFixed(2))
+    : null
+
   return {
     valor_total_ars: total,
     composicion_pct: {
@@ -111,6 +118,7 @@ function computeResumen(portfolio) {
     ganancia_total_ars:     gananciaARSClean,
     ganancia_total_usd:     gananciaUSDClean,
     costo_total_ars:        totalCostoARS,
+    costo_total_usd_historico: costoUSDHist,
     rend_total_ars_pct:     rendARS,
     rend_total_usd_mep_pct: rendUSD,
     // backwards-compat

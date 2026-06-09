@@ -34,6 +34,16 @@ _VAR_DOLAR_BNA     = 1
 _VAR_DOLAR_OFICIAL = 4
 _VAR_RIESGO_PAIS   = 5
 
+# argentinadatos.com — serie histórica de riesgo país (keyless)
+_ARGENTINADATOS_RIESGO_PAIS = "https://api.argentinadatos.com/v1/finanzas/indices/riesgo-pais"
+
+# Nombres de meses en español para formatear la fecha del mínimo
+_MESES_ES = {
+    1: "ene", 2: "feb", 3: "mar", 4: "abr",
+    5: "may", 6: "jun", 7: "jul", 8: "ago",
+    9: "sep", 10: "oct", 11: "nov", 12: "dic",
+}
+
 # ---------------------------------------------------------------------------
 # PPI — autenticación y cotizaciones
 # Esquema idéntico al backend (ppi_client.py): 4 credenciales en headers HTTP.
@@ -171,6 +181,115 @@ def _bcra_variable(var_id: int) -> float:
 
 
 # ---------------------------------------------------------------------------
+# argentinadatos.com — serie histórica y cálculo de mínimo
+# ---------------------------------------------------------------------------
+
+def _calcular_minimo_riesgo_pais(serie: list, valor_actual: int) -> tuple:
+    """
+    Dada la serie histórica [{fecha: str, valor: number}, ...] ordenada ASC
+    y el valor actual, calcula:
+      - riesgo_pais_min: mínimo del período reciente (int, = el valor actual)
+      - riesgo_pais_min_desde: mes/año desde el cual el valor no había sido
+        tan bajo (str, ej: "feb 2026").
+
+    La lógica de "desde": buscamos el tramo más reciente en que el valor se
+    mantuvo >= al actual; "desde" = el primer mes de ese tramo. Usamos la fecha
+    real (sin sumar meses) para no caer nunca en un mes futuro.
+
+    Retorna (None, None) si la serie está vacía o tiene menos de 2 puntos.
+    """
+    if not serie or len(serie) < 2:
+        return None, None
+
+    # Filtrar entradas válidas
+    puntos = []
+    for entrada in serie:
+        try:
+            fecha_str = entrada.get("fecha", "")
+            valor = int(entrada.get("valor", 0) or 0)
+            if fecha_str and valor > 0:
+                puntos.append((fecha_str, valor))
+        except (ValueError, TypeError):
+            continue
+
+    if not puntos:
+        return None, None
+
+    # Tramo más reciente en que el valor se mantuvo SIEMPRE >= al actual (sin haber
+    # estado más bajo). El "desde" = fecha del primer punto de ese tramo; el mínimo
+    # del tramo es, por construcción, el propio valor_actual.
+    fecha_desde_str = puntos[-1][0]
+    for fecha_str, valor in reversed(puntos[:-1]):  # excluir el último (= valor actual)
+        if valor < valor_actual:
+            break
+        fecha_desde_str = fecha_str
+
+    # Formatear como "feb 2026" usando la fecha real del inicio del tramo
+    # (sin aritmética de meses → nunca cae en un mes futuro).
+    try:
+        anio_f, mes_f = int(fecha_desde_str[:4]), int(fecha_desde_str[5:7])
+        min_desde = f"{_MESES_ES.get(mes_f, str(mes_f))} {anio_f}"
+    except Exception:
+        min_desde = fecha_desde_str
+
+    return valor_actual, min_desde
+
+
+def _fetch_riesgo_pais() -> int:
+    """
+    Riesgo país (EMBI+ Argentina) en pb. Fuente primaria: argentinadatos.com
+    (misma serie que el mínimo histórico → valor y "mín desde" consistentes;
+    ~1-2 días hábiles de rezago). Fallback: BCRA variable 5.
+    """
+    # Intento 1: argentinadatos.com (último punto de la serie)
+    try:
+        resp = httpx.get(_ARGENTINADATOS_RIESGO_PAIS, timeout=8)
+        if resp.is_success:
+            data = resp.json()
+            if isinstance(data, list) and data:
+                valor = int(data[-1].get("valor", 0) or 0)
+                if valor > 0:
+                    return valor
+    except Exception as exc:
+        print(f"[ARGENTINADATOS] Error riesgo país: {exc}")
+    # Intento 2 (fallback): BCRA variable 5
+    return int(_bcra_variable(_VAR_RIESGO_PAIS) or 0)
+
+
+def _fetch_riesgo_pais_historico() -> tuple:
+    """
+    Descarga la serie histórica de riesgo país desde argentinadatos.com
+    y calcula riesgo_pais_min y riesgo_pais_min_desde.
+    Retorna (None, None) si falla o no hay datos suficientes.
+    """
+    try:
+        resp = httpx.get(_ARGENTINADATOS_RIESGO_PAIS, timeout=12)
+        if not resp.is_success:
+            print(f"[ARGENTINADATOS] Serie histórica HTTP {resp.status_code}")
+            return None, None
+
+        serie = resp.json()
+        if not isinstance(serie, list) or len(serie) < 2:
+            print("[ARGENTINADATOS] Serie histórica vacía o insuficiente")
+            return None, None
+
+        # Valor actual = último punto de la serie (ordenada ASC)
+        try:
+            valor_actual = int(serie[-1].get("valor", 0) or 0)
+        except (ValueError, TypeError):
+            return None, None
+
+        if valor_actual <= 0:
+            return None, None
+
+        return _calcular_minimo_riesgo_pais(serie, valor_actual)
+
+    except Exception as exc:
+        print(f"[ARGENTINADATOS] Error descargando serie histórica: {exc}")
+        return None, None
+
+
+# ---------------------------------------------------------------------------
 # Scheduler: polling de cotizaciones
 # ---------------------------------------------------------------------------
 
@@ -179,7 +298,7 @@ def polling_cotizaciones(event: scheduler_fn.ScheduledEvent) -> None:
     """
     Se ejecuta cada 60 segundos.
     1. Obtiene MEP y CCL desde PPI (via bonos AL30/GD30)
-    2. Obtiene BNA, Oficial y Riesgo País desde BCRA (API pública)
+    2. Obtiene BNA y Oficial desde BCRA; Riesgo País desde argentinadatos (BCRA fallback)
     3. Preserva el último valor conocido si alguna fuente devuelve 0
        (mercado cerrado o error transitorio — nunca sobreescribe con 0)
     4. Escribe en /market/cotizaciones
@@ -207,7 +326,10 @@ def polling_cotizaciones(event: scheduler_fn.ScheduledEvent) -> None:
     ccl     = _calc_dolar_ccl()
     bna     = _bcra_variable(_VAR_DOLAR_BNA)
     oficial = _bcra_variable(_VAR_DOLAR_OFICIAL)
-    riesgo  = int(_bcra_variable(_VAR_RIESGO_PAIS))
+    riesgo  = _fetch_riesgo_pais()
+
+    # Serie histórica de riesgo país: mínimo y período "desde"
+    rp_min, rp_min_desde = _fetch_riesgo_pais_historico()
 
     data = {
         "dolar_mep":            _pick_float(mep,    "dolar_mep"),
@@ -218,10 +340,23 @@ def polling_cotizaciones(event: scheduler_fn.ScheduledEvent) -> None:
         "ultima_actualizacion": datetime.now(timezone.utc).isoformat(),
     }
 
+    # Campos históricos: usar el nuevo valor si está disponible,
+    # si no preservar el que ya estaba en Firestore (fallback)
+    if rp_min is not None:
+        data["riesgo_pais_min"] = rp_min
+    elif existing.get("riesgo_pais_min") is not None:
+        data["riesgo_pais_min"] = existing["riesgo_pais_min"]
+
+    if rp_min_desde is not None:
+        data["riesgo_pais_min_desde"] = rp_min_desde
+    elif existing.get("riesgo_pais_min_desde") is not None:
+        data["riesgo_pais_min_desde"] = existing["riesgo_pais_min_desde"]
+
     ref.set(data)
     print(
         f"[polling] MEP={data['dolar_mep']} CCL={data['dolar_ccl']} "
-        f"BNA={data['dolar_bna']} RP={data['riesgo_pais_pb']}pb"
+        f"BNA={data['dolar_bna']} RP={data['riesgo_pais_pb']}pb "
+        f"RP_min={data.get('riesgo_pais_min')} desde={data.get('riesgo_pais_min_desde')}"
     )
 
 
