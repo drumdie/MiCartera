@@ -134,6 +134,28 @@ function withTipo(escenario) {
   return { ...escenario, tipo }
 }
 
+// Agrupación temática de tickers para el tab Fundamentales (referencia: cartera_app_v5b.html).
+// Los tickers que no estén acá caen al grupo por sector de yfinance / categoría.
+const _GRUPO_TEMATICO = {
+  YPFD: 'Energía · Upstream',           VIST:  'Energía · Upstream',
+  TGSU2: 'Energía · Gas y Transmisión', TGNO4: 'Energía · Gas y Transmisión',
+  TRAN: 'Energía · Gas y Transmisión',  PAMP:  'Energía · Gas y Transmisión',
+  TXAR: 'Materiales',                   ALUA:  'Materiales',
+  LAR: 'CEDEARs Internacionales',       NVDA:  'CEDEARs Internacionales',
+  GOOGL: 'CEDEARs Internacionales',     XOM:   'CEDEARs Internacionales',
+  BHIP: 'Tácticos / Momentum',          COME:  'Tácticos / Momentum',
+  BYMA: 'Tácticos / Momentum',          BBD:   'Tácticos / Momentum',
+}
+
+// Orden en que se muestran los grupos temáticos (los no listados van después, alfabéticos).
+const _GRUPO_ORDEN = [
+  'Energía · Upstream',
+  'Energía · Gas y Transmisión',
+  'Materiales',
+  'CEDEARs Internacionales',
+  'Tácticos / Momentum',
+]
+
 export function usePortfolio(uid) {
   const [rawPortfolio,      setRawPortfolio]      = useState(null)
   const [cotizaciones,      setCotizaciones]      = useState(MOCK_COTIZACIONES)
@@ -207,10 +229,39 @@ export function usePortfolio(uid) {
     fetchStress()
   }, [fetchStress])
 
-  const portfolio = useMemo(
-    () => computePortfolio(rawPortfolio, cotizaciones),
-    [rawPortfolio, cotizaciones]
-  )
+  // Portfolio base + enriquecido con el análisis fundamental (accion_tactica, tesis)
+  // por ticker, para que el tab Posiciones muestre el badge táctico y la tesis corta.
+  const portfolio = useMemo(() => {
+    const base = computePortfolio(rawPortfolio, cotizaciones)
+    if (!base) return base
+
+    const funds = Object.values(rawFundamentals)
+    if (funds.length === 0) return base
+
+    const byTicker = {}
+    for (const f of funds) byTicker[f.ticker] = f
+
+    const enrich = (cat) => ({
+      ...cat,
+      posiciones: (cat.posiciones ?? []).map(p => {
+        const f = byTicker[p.ticker]
+        if (!f) return p
+        const extra = {}
+        if (!p.accion_tactica && f.accion_tactica) extra.accion_tactica = f.accion_tactica
+        if (!p.tesis_corta && f.tesis)             extra.tesis_corta   = f.tesis
+        return Object.keys(extra).length ? { ...p, ...extra } : p
+      }),
+    })
+
+    return {
+      ...base,
+      acciones_ar: enrich(base.acciones_ar),
+      cedears:     enrich(base.cedears),
+      bonos:       enrich(base.bonos),
+      ons:         enrich(base.ons),
+      fci:         enrich(base.fci),
+    }
+  }, [rawPortfolio, cotizaciones, rawFundamentals])
   const resumen = useMemo(() => computeResumen(portfolio), [portfolio])
 
   // Rendimiento de los últimos 30 días (o los días disponibles si hay menos historia).
@@ -263,15 +314,24 @@ export function usePortfolio(uid) {
     const entries = Object.values(rawFundamentals)
     if (entries.length === 0) return []
 
-    // Agrupar por sector (o categoria como fallback)
-    const bySector = {}
+    // Agrupar por grupo temático (mapeo manual); fallback a sector de yfinance / categoría.
+    const byGrupo = {}
     for (const fund of entries) {
-      const key = fund.sector || (fund.categoria === 'cedear' ? 'CEDEARs' : 'Acciones AR')
-      if (!bySector[key]) bySector[key] = []
-      bySector[key].push(fund)
+      const key = _GRUPO_TEMATICO[fund.ticker]
+        || fund.sector
+        || (fund.categoria === 'cedear' ? 'CEDEARs' : 'Acciones AR')
+      if (!byGrupo[key]) byGrupo[key] = []
+      byGrupo[key].push(fund)
     }
 
-    return Object.entries(bySector).map(([sector, posiciones]) => ({ sector, posiciones }))
+    // Primero los grupos temáticos en su orden definido, después el resto alfabético.
+    const orden = (g) => {
+      const i = _GRUPO_ORDEN.indexOf(g)
+      return i === -1 ? _GRUPO_ORDEN.length : i
+    }
+    return Object.entries(byGrupo)
+      .map(([sector, posiciones]) => ({ sector, posiciones }))
+      .sort((a, b) => orden(a.sector) - orden(b.sector) || a.sector.localeCompare(b.sector))
   }, [rawFundamentals])
 
   // Leer is_stale y ultima_sync desde cualquier categoría del portfolio raw.

@@ -17,7 +17,8 @@ function scenarioPrice(val) {
 }
 
 export default function FundCard({ position }) {
-  const [showTV, setShowTV] = useState(false)
+  const [showTV, setShowTV]   = useState(false)
+  const [showExt, setShowExt] = useState(false)
 
   const {
     ticker, descripcion, accion_tactica, sentimiento,
@@ -33,6 +34,8 @@ export default function FundCard({ position }) {
     ratios = [],
     // Tesis y escenarios
     tesis, escenarios = {},
+    // Ampliación (Claude): análisis largo + links a fuentes
+    analisis_extendido, fuentes = [],
     // TradingView
     tv_symbol,
   } = position
@@ -128,6 +131,29 @@ export default function FundCard({ position }) {
               <div className="fc-sce-val bull">{bullVal}</div>
             </div>
           )}
+        </div>
+      )}
+
+      {/* Análisis extendido (expandible) */}
+      {analisis_extendido && (
+        <button className="fc-tv-btn" onClick={() => setShowExt(v => !v)}>
+          <span>{showExt ? '▲' : '📄'}</span>
+          <span>{showExt ? 'Ocultar análisis' : 'Análisis completo'}</span>
+        </button>
+      )}
+      {showExt && analisis_extendido && (
+        <div className="fc-ext">{analisis_extendido}</div>
+      )}
+
+      {/* Fuentes para ampliar */}
+      {fuentes.length > 0 && (
+        <div className="fc-fuentes">
+          <span className="fc-fuentes-icon">📎</span>
+          {fuentes.map(f => (
+            <a key={f.url} href={f.url} target="_blank" rel="noopener noreferrer">
+              {f.nombre}
+            </a>
+          ))}
         </div>
       )}
 

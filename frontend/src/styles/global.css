@@ -197,6 +197,10 @@ body::before {
 .fc-ratio-val.danger { color: var(--red); }
 .fc-ratio-val.neutral { color: var(--muted); }
 .fc-tesis { font-size: 10px; color: var(--muted2); line-height: 1.6; margin-bottom: 8px; }
+.fc-ext { font-size: 11px; color: var(--muted2); line-height: 1.65; white-space: pre-line; border-top: 1px solid var(--border); padding-top: 8px; margin: 8px 0; }
+.fc-fuentes { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; font-size: 10px; margin: 8px 0 4px; }
+.fc-fuentes a { color: var(--muted2); text-decoration: underline; text-underline-offset: 2px; }
+.fc-fuentes a:hover { color: var(--text); }
 .fc-scenarios { display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; border-top: 1px solid var(--border); padding-top: 8px; margin-bottom: 10px; }
 .fc-sce-label { font-size: 8px; color: var(--muted); text-transform: uppercase; letter-spacing: .06em; text-align: center; }
 .fc-sce-val { font-family: 'IBM Plex Mono', monospace; font-size: 11px; font-weight: 500; margin-top: 2px; text-align: center; }

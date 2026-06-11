@@ -365,7 +365,13 @@ async def save_analysis(ticker: str, request: Request):
     uid  = request.state.uid
     body = await request.json()
 
-    allowed = {"accion_tactica", "sentimiento", "tesis", "escenarios"}
+    # Todos los campos que el esquema del prompt fundamental le pide a Claude
+    # (contextBuilder.buildFundamentalContext) y que FundCard sabe renderizar.
+    allowed = {
+        "accion_tactica", "sentimiento", "tesis", "escenarios",
+        "q1_2026", "q1_fuente", "kpis", "comparable_ev_ebitda",
+        "analisis_extendido", "fuentes",
+    }
     data = {k: v for k, v in body.items() if k in allowed}
     if not data:
         return {"status": "ok", "mensaje": "Sin campos para guardar"}
