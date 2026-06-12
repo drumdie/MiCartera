@@ -187,6 +187,49 @@ def _transform_position(
     if avg_cost_usd and not is_usd:
         pos["precio_compra_usd"] = round(avg_cost_usd, 4)
 
+    # -----------------------------------------------------------------------
+    # Rendimiento TOTAL = rendimiento de precio (ya calculado) + renta cobrada.
+    # La renta (cupones + amortizaciones + dividendos) viene agregada por ticker
+    # desde compute_avg_costs. NO reemplaza el rendimiento de precio: se agrega
+    # como campos nuevos (renta_cobrada_*, rend_total_*).
+    #
+    # Limitaciones conocidas (v1):
+    #   • P&L realizado de trading (arbitraje MEP) NO está incluido: solo cupones,
+    #     amortizaciones y dividendos, no la ganancia de comprar/vender nominales.
+    #   • En posiciones muy operadas (vendidas parcialmente) la renta cobrada es la
+    #     histórica TOTAL del ticker, no prorrateada a los nominales actuales, por
+    #     lo que el rend_total puede sobreestimar. Aceptable como aproximación.
+    #   • Las retenciones impositivas no se restan (renta bruta) — efecto chico.
+    # -----------------------------------------------------------------------
+    renta = item.get("rentaCobrada")
+    if renta and costo_total_ars > 0:
+        renta_ars = round(float(renta.get("renta_ars", 0)) + float(renta.get("amort_ars", 0)), 2)
+        renta_usd = round(float(renta.get("renta_usd", 0)) + float(renta.get("amort_usd", 0)), 2)
+        if renta_ars != 0 or renta_usd != 0:
+            pos["renta_cobrada_ars"] = renta_ars
+            pos["renta_cobrada_usd"] = renta_usd
+            # Desglose cupón vs amortización (informativo; el rend total los suma).
+            pos["cupon_cobrado_ars"] = round(float(renta.get("renta_ars", 0)), 2)
+            pos["amort_cobrada_ars"] = round(float(renta.get("amort_ars", 0)), 2)
+            pos["cupon_cobrado_usd"] = round(float(renta.get("renta_usd", 0)), 2)
+            pos["amort_cobrada_usd"] = round(float(renta.get("amort_usd", 0)), 2)
+
+            # Rend. total ARS = (valor_actual + renta − costo) / costo
+            pos["rend_total_ars_pct"] = round(
+                (valor + renta_ars - costo_total_ars) / costo_total_ars * 100, 2
+            )
+            # Rend. total USD: misma base USD que ganancia_usd_mep, para consistencia.
+            if avg_cost_usd and avg_cost_usd > 0:
+                costo_usd = avg_cost_usd * cantidad
+            elif dolar_mep > 0:
+                costo_usd = costo_total_ars / dolar_mep
+            else:
+                costo_usd = 0.0
+            if costo_usd > 0:
+                pos["rend_total_usd_pct"] = round(
+                    (ganancia_usd_mep + renta_usd) / costo_usd * 100, 2
+                )
+
     subyacente = item.get("UnderlyingTicker", item.get("underlyingTicker", ""))
     if subyacente:
         pos["subyacente_usd"]     = subyacente
@@ -375,6 +418,10 @@ async def sync_portfolio(request: Request, force_full: bool = False):
         except Exception:
             pass
 
+    # Renta cobrada por ticker (cupones + amortizaciones + dividendos), calculada en
+    # compute_avg_costs. Se atribuye a la posición del mismo ticker para el rend total.
+    renta_por_ticker: dict[str, dict] = (avg_costs_state.get("renta") or {})
+
     # Pre-agrupar items raw por categoría (inyectando avg_cost si disponible)
     grupos_raw: dict[str, list[dict]] = {
         "acciones_ar": [], "cedears": [], "bonos": [],
@@ -438,6 +485,12 @@ async def sync_portfolio(request: Request, force_full: bool = False):
                 if _acum_qty > 0 and _actual_qty > 0 and abs(_acum_qty - _actual_qty) > 0.5:
                     avg_usd = round(avg_usd * (_acum_qty / _actual_qty), 6)
                 item = {**item, "averagePriceUSD": avg_usd}
+
+        # Inyectar renta cobrada (cupones + amortizaciones + dividendos) para que
+        # _transform_position calcule el rendimiento total (precio + renta).
+        _renta = renta_por_ticker.get(ticker) or renta_por_ticker.get(ticker[:10])
+        if _renta:
+            item = {**item, "rentaCobrada": _renta}
 
         grupos_raw[cat].append(item)
 

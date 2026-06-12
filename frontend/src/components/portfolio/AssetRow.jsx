@@ -39,6 +39,17 @@ export default function AssetRow({ position, expanded, onToggle, isCedear, isBon
   const rendHist      = getRend(position)
   const rendHistLabel = isMEPmode ? 'Rend. Histórico USD' : 'Rend. Histórico ARS'
 
+  // Renta cobrada (cupones + amortizaciones + dividendos) y rendimiento TOTAL
+  // (precio + renta). Solo se muestra cuando el backend la atribuyó (bonos/ONs y
+  // acciones con dividendos). Sigue el toggle: USD en modo MEP/CCL, ARS si no.
+  const rentaCobrada = isMEPmode ? position.renta_cobrada_usd : position.renta_cobrada_ars
+  const rendTotal    = isMEPmode
+    ? (position.rend_total_usd_pct ?? position.rend_total_ars_pct ?? null)
+    : (position.rend_total_ars_pct ?? null)
+  const rentaCobradaFmt = rentaCobrada != null
+    ? (isMEPmode ? formatUSD(rentaCobrada) : formatARS(rentaCobrada))
+    : null
+
   // Ganancia/pérdida absoluta en la moneda activa
   const ganancia = isMEPmode
     ? (position.ganancia_usd_mep != null ? formatUSD(position.ganancia_usd_mep) : null)
@@ -181,12 +192,35 @@ export default function AssetRow({ position, expanded, onToggle, isCedear, isBon
             </div>
           )}
 
-          {/* Rendimiento histórico: sigue toggle de moneda activa */}
+          {/* Rendimiento histórico: sigue toggle de moneda activa.
+              Para bonos/ONs con renta es el rend de PRECIO (sin cupones). */}
           {rendHist != null && (
             <div>
               <div className="tg-label">{rendHistLabel}</div>
               <div className={`tg-val ${rendHist >= 0 ? 'pos' : 'neg'}`}>
                 {formatPctShort(rendHist)}
+              </div>
+            </div>
+          )}
+
+          {/* Renta cobrada: cupones + amortizaciones + dividendos acumulados (caja).
+              Solo presente en instrumentos que pagaron renta. */}
+          {rentaCobradaFmt != null && (
+            <div>
+              <div className="tg-label">Renta cobrada {curLabel}</div>
+              <div className={`tg-val ${rentaCobrada >= 0 ? 'pos' : 'neg'}`}>
+                <PrivacyMask>{rentaCobradaFmt}</PrivacyMask>
+              </div>
+            </div>
+          )}
+
+          {/* Rendimiento TOTAL = precio + renta cobrada. Va junto al rend de precio
+              para que se vea lo que aportaron los cupones. */}
+          {rendTotal != null && (
+            <div>
+              <div className="tg-label">Rend. Total {curLabel}</div>
+              <div className={`tg-val ${rendTotal >= 0 ? 'pos' : 'neg'}`}>
+                {formatPctShort(rendTotal)}
               </div>
             </div>
           )}

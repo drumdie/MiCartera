@@ -137,6 +137,113 @@ def _mov_sig(ticker: str, m: dict) -> str:
     return f"{ticker}|{m.get('date', '')}|{m.get('qty', 0)}|{m.get('amount', 0)}"
 
 
+# ---------------------------------------------------------------------------
+# Renta cobrada: cupones, amortizaciones y dividendos.
+#
+# En los movimientos de PPI estos cobros vienen con qty=0, price=0 y
+# ticker="Ticker not found": el ticker real está EN LA DESCRIPCIÓN, después del
+# último " / " (ej. "Renta / AE38", "Interest payment (INTR) - DISN / MTCGD",
+# "Amortización / AL30", "Dividendo en efectivo / GGAL").
+#
+# Cada cobro se parte en legs de moneda: el leg POSITIVO es la plata cobrada
+# (USD para bonos/CEDEARs en dólar, ARS para acciones argentinas); el leg
+# NEGATIVO en pesos es la retención impositiva (chica) → se ignora. Por eso solo
+# acumulamos amount > 0. Verificado contra datos reales con diag_renta/diag_legs.
+# ---------------------------------------------------------------------------
+_AMORT_KEYWORDS: tuple[str, ...] = ("amortizacion", "amort", "redemption", "redencion")
+_RENTA_KEYWORDS: tuple[str, ...] = ("renta", "cupon", "interest", "interes", "dividendo")
+# Descripciones que NO son renta (trades, caja, retenciones) → se descartan.
+_NORENTA_KEYWORDS: tuple[str, ...] = (
+    "compra", "venta", "suscrip", "rescate", "caucion", "ingreso",
+    "retiro", "movimiento", "comunicacion", "compensacion",
+)
+
+
+def _norm_desc(text: str) -> str:
+    """Minúsculas sin tildes, para matchear descripciones de forma robusta."""
+    import unicodedata
+    norm = unicodedata.normalize("NFD", str(text or ""))
+    return "".join(c for c in norm if unicodedata.category(c) != "Mn").lower()
+
+
+def _classify_renta(description: str) -> str | None:
+    """Clasifica una descripción como 'amortizacion', 'renta' o None.
+
+    Las líneas de retención ("Retenciones Div.", "Ret Ganancias…") empiezan con
+    'ret' y se descartan (el leg negativo de impuesto ya se ignora aparte).
+    'renta' NO empieza con 'ret' (empieza con 'ren'), así que no colisiona.
+    """
+    d = _norm_desc(description)
+    if d.startswith("ret"):
+        return None
+    if any(w in d for w in _NORENTA_KEYWORDS):
+        return None
+    if any(w in d for w in _AMORT_KEYWORDS):
+        return "amortizacion"
+    if any(w in d for w in _RENTA_KEYWORDS):
+        return "renta"
+    return None
+
+
+def _ticker_from_desc(description: str) -> str:
+    """Extrae el ticker del final de la descripción: 'Renta / AE38' → 'AE38'."""
+    parts = str(description or "").rsplit("/", 1)
+    return parts[-1].strip() if len(parts) == 2 else ""
+
+
+def _accumulate_renta(
+    mov: dict,
+    renta_acc: dict[str, dict],
+    seen_sigs: set[str],
+    mep_history: dict[str, float],
+) -> bool:
+    """
+    Procesa un movimiento de renta/cupón/amortización/dividendo.
+
+    Devuelve True si el movimiento ES un cobro de renta (para excluirlo del cálculo
+    de avg_cost), False si no lo es. Solo acumula el leg POSITIVO (la plata cobrada);
+    el leg negativo (retención) se marca consumido pero no suma. Convierte a USD con
+    el MEP histórico del día y deduplica por firma para el solape del sync incremental.
+    """
+    kind = _classify_renta(mov.get("description", ""))
+    if kind is None:
+        return False
+    amount = float(mov.get("amount", 0) or 0)
+    if amount <= 0:
+        return True  # leg de retención/impuesto → consumido, no suma
+
+    ticker = _ticker_from_desc(mov.get("description", ""))
+    if not ticker:
+        return True
+
+    date_key = mov.get("settlementDate") or mov.get("date") or ""
+    sig = f"{ticker}|{date_key}|{round(amount, 2)}|{_norm_desc(mov.get('description', ''))}"
+    if sig in seen_sigs:
+        return True
+    seen_sigs.add(sig)
+
+    mep_dia = _get_mep_for_date(date_key, mep_history)
+    if "olar" in str(mov.get("currency", "")).lower():
+        amount_usd = amount
+        amount_ars = amount * mep_dia if mep_dia > 0 else 0.0
+    else:
+        amount_ars = amount
+        amount_usd = (amount / mep_dia) if mep_dia > 0 else 0.0
+
+    acc = renta_acc.setdefault(
+        ticker,
+        {"renta_ars": 0.0, "renta_usd": 0.0, "amort_ars": 0.0, "amort_usd": 0.0, "n": 0},
+    )
+    if kind == "amortizacion":
+        acc["amort_ars"] += amount_ars
+        acc["amort_usd"] += amount_usd
+    else:
+        acc["renta_ars"] += amount_ars
+        acc["renta_usd"] += amount_usd
+    acc["n"] += 1
+    return True
+
+
 class PPIClient:
     def __init__(self) -> None:
         self._access_token: Optional[str] = None
@@ -341,10 +448,35 @@ class PPIClient:
                 print(f"[PPI] movimientos {chunk_start.date()}/{chunk_end.date()}: {exc}")
             chunk_start = chunk_end + timedelta(days=1)
 
+        # Renta cobrada (cupones + amortizaciones + dividendos) acumulada por ticker.
+        # Soporte incremental: parte del total ya cacheado; el full arranca vacío.
+        # renta_seen deduplica el solape de 5 días que el sync incremental refetcha.
+        renta_acc: dict[str, dict] = {}
+        renta_seen: set[str] = set()
+        if cached_state:
+            for tk, r in (cached_state.get("renta") or {}).items():
+                if isinstance(r, dict):
+                    renta_acc[tk] = {
+                        "renta_ars": float(r.get("renta_ars", 0)),
+                        "renta_usd": float(r.get("renta_usd", 0)),
+                        "amort_ars": float(r.get("amort_ars", 0)),
+                        "amort_usd": float(r.get("amort_usd", 0)),
+                        "n":         int(r.get("n", 0)),
+                    }
+            renta_seen.update(str(s) for s in (cached_state.get("renta_sigs") or []))
+
         # Agrupar por ticker y ordenar cronológicamente
         by_ticker: dict[str, list] = {}
         latest_date = cached_state.get("last_processed_date", "") if cached_state else ""
         for mov in all_movements:
+            # Cobros de renta/cupón/amortización/dividendo: vienen con ticker="Ticker
+            # not found" y el ticker real en la descripción. Se acumulan como renta y
+            # se excluyen del cálculo de avg_cost (no mueven nominales).
+            if _accumulate_renta(mov, renta_acc, renta_seen, mep_history):
+                _dk = mov.get("settlementDate") or mov.get("date") or ""
+                if _dk > latest_date:
+                    latest_date = _dk
+                continue
             ticker = mov.get("ticker", "")
             if not ticker or ticker == "Ticker not found":
                 continue
@@ -471,11 +603,27 @@ class PPIClient:
             if (m.get("date") or "")[:10] >= sig_cutoff
         ]
 
+        # Renta cobrada por ticker (cupones + amortizaciones + dividendos), redondeada.
+        renta_state = {
+            tk: {
+                "renta_ars": round(r["renta_ars"], 2),
+                "renta_usd": round(r["renta_usd"], 4),
+                "amort_ars": round(r["amort_ars"], 2),
+                "amort_usd": round(r["amort_usd"], 4),
+                "n":         int(r["n"]),
+            }
+            for tk, r in renta_acc.items()
+            if (r["renta_ars"] + r["amort_ars"]) != 0 or (r["renta_usd"] + r["amort_usd"]) != 0
+        }
+
         new_state = {
             "full_sync_completed": True,
             "last_processed_date": latest_date,
             "ultima_actualizacion": now.isoformat(),
             "processed_sigs": processed_sigs,
+            "renta": renta_state,
+            # Firmas de renta recientes (para deduplicar el solape del incremental).
+            "renta_sigs": sorted(renta_seen)[-400:],
             "tickers": {
                 ticker: {
                     "qty":            round(pos["qty"], 6),
