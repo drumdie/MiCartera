@@ -48,3 +48,33 @@ export async function replaceCatalysts(uid, catalysts) {
   const ref = doc(db, 'users', uid, 'catalysts', 'data')
   await setDoc(ref, { proximos: catalysts })
 }
+
+// ── Contrato de Inversión por ticker ──
+// Doc /users/{uid}/contratos/data → { por_ticker: { TICKER: {rol, peso_min,
+// peso_objetivo, peso_max, tesis, kill_criteria, revision, actualizado} } }.
+// No contiene saldos → lectura directa por onSnapshot (sin backend).
+export function onSnapshotContratos(uid, callback) {
+  return onSnapshot(doc(db, 'users', uid, 'contratos', 'data'), (snap) => {
+    callback(snap.exists() ? (snap.data().por_ticker ?? {}) : {})
+  })
+}
+
+// Guarda/actualiza el contrato de UN ticker (merge profundo: no pisa los demás).
+export async function saveContrato(uid, ticker, contrato) {
+  const ref = doc(db, 'users', uid, 'contratos', 'data')
+  const payload = { ...contrato, actualizado: new Date().toISOString().slice(0, 10) }
+  await setDoc(ref, { por_ticker: { [ticker]: payload } }, { merge: true })
+}
+
+// ── Ranking táctico de cartera (output del LLM, nivel cartera) ──
+// Doc /users/{uid}/tactico/ranking → { items: [...], actualizado }.
+export function onSnapshotRankingTactico(uid, callback) {
+  return onSnapshot(doc(db, 'users', uid, 'tactico', 'ranking'), (snap) => {
+    callback(snap.exists() ? (snap.data().items ?? []) : [])
+  })
+}
+
+export async function saveRankingTactico(uid, ranking) {
+  const ref = doc(db, 'users', uid, 'tactico', 'ranking')
+  await setDoc(ref, { items: ranking, actualizado: new Date().toISOString() })
+}

@@ -1,6 +1,10 @@
 // Genera el texto de contexto para pegar en Claude.ai.
 // En Fase 2+ reemplazar por llamada directa a la API de Claude.
 
+import {
+  ROL_LABELS, SALUD_TESIS, ACCIONES_TACTICAS, URGENCIAS,
+} from '../data/contratoConfig'
+
 export function buildTacticalContext(portfolio, cotizaciones, resumen) {
   const lines = [
     '# Contexto táctico — MiCartera',
@@ -182,6 +186,127 @@ export function buildFundamentalContext(fundamental) {
       lines.push('')
     })
   }
+
+  return lines.join('\n')
+}
+
+// Prompt táctico basado en el Contrato de Inversión (spec_contrato_inversion.md §3–5).
+// Cruza los contratos del usuario + la capa determinística (computeTactico) +
+// fundamentals + catalizadores. Devuelve el texto para pegar en Claude.ai; la
+// respuesta JSON se valida con validateTacticalPayload antes de guardar.
+//   tactico             = salida de computeTactico(portfolio, contratos, ...)
+//   fundamentalsByTicker = { TICKER: { q1_2026, escenarios, kpis, ... } }
+//   catalizadores       = lista de catalizadores registrados
+export function buildContratoContext(tactico, fundamentalsByTicker = {}, catalizadores = []) {
+  if (!tactico) return '(Sin datos de cartera aún)'
+  const fmtPct = (n) => (n >= 0 ? '+' : '') + n + '%'
+
+  const catByTicker = {}
+  for (const c of (catalizadores ?? [])) {
+    const tks = [...new Set([...(c.tickers ?? []), ...(c.tickers_afectados ?? [])])]
+    for (const t of tks) (catByTicker[t] ??= []).push(c)
+  }
+
+  const lines = [
+    '# Táctico de cartera por Contrato de Inversión — MiCartera',
+    `Fecha: ${new Date().toLocaleDateString('es-AR')}`,
+    '',
+    '## Concentración de cartera',
+    ...tactico.concentracion.map(g => `- ${g.grupo}: ${g.pct}%`),
+    `- Liquidez: ${tactico.liquidez_pct}%`,
+  ]
+  if (tactico.suma_peso_objetivo != null) {
+    lines.push(`Suma de pesos objetivo definidos: ${tactico.suma_peso_objetivo}% (referencia vs 100%)`)
+  }
+
+  lines.push(
+    '',
+    '## Cómo razonar (reglas)',
+    '1. NO recomiendes sin citar el peso actual vs la banda objetivo y el rol declarado.',
+    '2. Ponderá Objetivos × % cartera × resultado:',
+    '   - Core / convicción alta + subió fuerte → MANTENER; buscar entrada en correcciones.',
+    '   - Core + sobreponderada → recortar SOLO el excedente por riesgo, no la tesis.',
+    '   - Especulativa + subió fuerte → tomar parcial / cristalizar antes.',
+    '   - Cualquiera + cayó fuerte → ¿tesis intacta (oportunidad) o rota (cortar)? Chequeá kill criteria.',
+    '3. Antídoto de sesgo: para cada posición core, dá el dato más fuerte HOY EN CONTRA de la tesis.',
+    '4. Noticias/catalizadores: solo importan si activan un kill criterion o adelantan/confirman un catalizador.',
+    '5. NO estás obligado a recomendar una operación: "mantener / no tocar" es válido si no hay evidencia.',
+    '6. Priorizá por IMPACTO en puntos porcentuales de cartera, no por % de rendimiento aislado.',
+    '',
+    '## Posiciones (por grupo temático)',
+  )
+
+  const clasifTxt = (p) => ({
+    debajo_de_banda: `DEBAJO de banda (faltan ${p.pp_faltantes} pp)`,
+    en_banda:        'en banda',
+    sobreponderada:  `SOBREPONDERADA (recortar ${p.pp_liberables} pp)`,
+    sin_contrato:    'sin contrato definido',
+  }[p.clasificacion] ?? p.clasificacion)
+
+  for (const g of tactico.grupos) {
+    lines.push('', `### ${g.grupo} — ${g.pct}% de la cartera`)
+    for (const p of g.posiciones) {
+      const c = p.contrato
+      lines.push(`- ${p.ticker} (${p.categoria}) · peso ${p.peso_actual}% → ${clasifTxt(p)}`)
+      if (c?.rol) {
+        lines.push(`  Contrato: ${ROL_LABELS[c.rol] ?? c.rol} · banda ${c.peso_min}–${c.peso_objetivo}–${c.peso_max}%`)
+      }
+      if (c?.tesis) lines.push(`  Tesis del usuario: ${c.tesis}`)
+      const kills = (c?.kill_criteria ?? []).filter(k => (k ?? '').trim())
+      if (kills.length) lines.push(`  Kill criteria: ${kills.map(k => `(${k})`).join(' ')}`)
+
+      const rendTxt  = p.rend_no_confiable ? 'N/D' : (p.rend_usd_pct != null ? fmtPct(p.rend_usd_pct) : 's/d')
+      const totalTxt = p.rend_total_usd_pct != null ? ` · total ${fmtPct(p.rend_total_usd_pct)}` : ''
+      const flag     = p.subio_fuerte ? ' · SUBIÓ FUERTE' : (p.cayo_fuerte ? ' · CAYÓ FUERTE' : '')
+      lines.push(`  Rend precio USD: ${rendTxt}${totalTxt}${flag}`)
+
+      const f = fundamentalsByTicker[p.ticker]
+      if (f?.q1_2026) lines.push(`  Fundamental Q1: ${f.q1_2026}`)
+      if (f?.escenarios && (f.escenarios.bear || f.escenarios.base || f.escenarios.bull)) {
+        lines.push(`  Escenarios: bear ${f.escenarios.bear ?? '—'} | base ${f.escenarios.base ?? '—'} | bull ${f.escenarios.bull ?? '—'}`)
+      }
+      const cats = catByTicker[p.ticker]
+      if (cats?.length) lines.push(`  Catalizadores: ${cats.map(c2 => `[${c2.fecha}] ${c2.evento}`).join(' · ')}`)
+    }
+  }
+
+  lines.push(
+    '',
+    '---',
+    'Devolvé SOLO el JSON con este schema exacto (sin texto adicional):',
+    '',
+    '```json',
+    '{',
+    '  "analisis_tactico": [',
+    '    {',
+    '      "ticker": "YPFD",',
+    '      "salud_tesis": "intacta",',
+    '      "mejor_argumento_en_contra": "El dato más fuerte HOY en contra de mantener la posición.",',
+    '      "accion_tactica": "mantener",',
+    '      "justificacion": "Conectá contrato + números + tesis + cartera. Citá peso vs banda.",',
+    '      "urgencia": "media",',
+    '      "condicion_espera": "Opcional: qué esperar (ej. balance Q2) si la acción es mantener/observar."',
+    '    }',
+    '  ],',
+    '  "ranking_tactico": [',
+    '    {',
+    '      "prioridad": 1,',
+    '      "ticker": "YPFD",',
+    '      "accion": "reducir_parcial",',
+    '      "impacto_pp": 5.6,',
+    '      "urgencia": "alta",',
+    '      "motivo": "Qué la hace la acción más importante (impacto en pp de cartera)."',
+    '    }',
+    '  ]',
+    '}',
+    '```',
+    '',
+    `Enums: salud_tesis = ${SALUD_TESIS.join(' | ')}`,
+    `       accion_tactica / accion = ${ACCIONES_TACTICAS.join(' | ')}`,
+    `       urgencia = ${URGENCIAS.join(' | ')}`,
+    'El ranking ordena TODAS las acciones por impacto en pp de cartera (la más importante primero).',
+    'Si una posición no requiere acción, igual incluila en analisis_tactico con accion "mantener".',
+  )
 
   return lines.join('\n')
 }

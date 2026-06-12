@@ -271,6 +271,10 @@ _ANALYSIS_KEYS = (
     "accion_tactica", "sentimiento", "tesis", "escenarios",
     "q1_2026", "q1_fuente", "kpis", "comparable_ev_ebitda",
     "analisis_extendido", "fuentes",
+    # Output táctico del Contrato de Inversión (anidado bajo "tactico" para no
+    # chocar con el accion_tactica fundamental): salud_tesis, accion_tactica,
+    # justificacion, urgencia, condicion_espera, mejor_argumento_en_contra.
+    "tactico",
 )
 
 
