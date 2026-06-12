@@ -93,15 +93,30 @@ def _ars_unit_price(
     date_key: str,
     ref_price: float,
     mep_history: dict[str, float],
+    currency: str = "",
 ) -> float:
     """
     Retorna el precio unitario en ARS.
-    Si el precio viene en USD (price << ref_price por factor >50x),
-    lo convierte usando el MEP histórico exacto del día.
-    Fallback: potencia de 10 más cercana al ratio.
+
+    Detección de denominación USD en dos niveles:
+      1. EXPLÍCITA por el campo `currency` del movimiento ("Dolar MEP",
+         "Dolares billete | MEP"…). Es robusta incluso con un solo movimiento,
+         donde la heurística por mediana no tiene datos suficientes
+         (ej. YM41D, BZ.RF: una sola compra en USD → antes quedaban sin convertir).
+      2. HEURÍSTICA por mediana (price << ref_price por factor >50x), como
+         fallback cuando la moneda no viene o es ambigua.
+    En ambos casos convierte con el MEP histórico exacto del día.
     """
     import math as _math
-    if price <= 0 or ref_price <= 0:
+    if price <= 0:
+        return price
+
+    cur = currency.lower()
+    if "olar" in cur or "mep" in cur:       # USD explícito por moneda del movimiento
+        mep = _get_mep_for_date(date_key, mep_history)
+        return price * mep if mep > 0 else price
+
+    if ref_price <= 0:
         return price
     ratio = ref_price / price
     if ratio <= 50:
@@ -111,6 +126,15 @@ def _ars_unit_price(
         return price * mep                  # conversión exacta con MEP histórico
     power = round(_math.log10(ratio))
     return price * (10 ** max(1, power))    # fallback ×10^n
+
+
+def _mov_sig(ticker: str, m: dict) -> str:
+    """
+    Firma única de un movimiento para deduplicar las re-lecturas del buffer
+    incremental (ticker + fecha + cantidad + monto). Evita que el mismo
+    movimiento se sume dos veces en syncs sucesivos.
+    """
+    return f"{ticker}|{m.get('date', '')}|{m.get('qty', 0)}|{m.get('amount', 0)}"
 
 
 class PPIClient:
@@ -327,13 +351,22 @@ class PPIClient:
             qty    = abs(float(mov.get("quantity", 0)))
             price  = float(mov.get("price", 0))
             amount = float(mov.get("amount", 0))
-            if qty == 0 or price == 0:
+            if qty == 0:
+                continue
+            # price == 0 con qty > 0: acción corporativa sin precio (split, revalúo,
+            # acciones liberadas). Se incorpora la cantidad a costo cero — sólo si es
+            # un CRÉDITO de títulos (amount <= 0) — para que la qty cuadre con la
+            # posición y el avg_cost se diluya, en vez de descartarla y desincronizar
+            # (ej. BYMA "Revalúo" +49 → el cache quedaba en 1 vs 50 reales; GD38 +5).
+            # price == 0 con amount > 0 es ambiguo (evento de caja) → se ignora.
+            if price == 0 and amount > 0:
                 continue
             date_key = mov.get("settlementDate") or mov.get("date") or ""
             if date_key > latest_date:
                 latest_date = date_key
             by_ticker.setdefault(ticker, []).append(
-                {"qty": qty, "price": price, "amount": amount, "date": date_key}
+                {"qty": qty, "price": price, "amount": amount, "date": date_key,
+                 "currency": mov.get("currency", "")}
             )
         for movs in by_ticker.values():
             movs.sort(key=lambda m: m["date"])
@@ -354,7 +387,7 @@ class PPIClient:
                 acum[ticker] = {"qty": 0.0, "total_cost": 0.0, "total_cost_usd": 0.0}
                 ref = medians.get(ticker, 0.0)
                 for m in movs:
-                    unit_price_ars = _ars_unit_price(m["price"], m["date"], ref, mep_history)
+                    unit_price_ars = _ars_unit_price(m["price"], m["date"], ref, mep_history, m.get("currency", ""))
                     mep_dia        = _get_mep_for_date(m["date"], mep_history)
                     unit_price_usd = (unit_price_ars / mep_dia) if mep_dia > 0 else 0.0
                     if m["amount"] < 0:                          # compra
@@ -378,6 +411,12 @@ class PPIClient:
                     "total_cost_usd": float(state.get("total_cost_usd", 0)),
                 }
 
+            # Deduplicación: el buffer de 5 días re-lee movimientos ya procesados en
+            # syncs anteriores. Sin esto se suman dos veces y la cantidad se infla
+            # (ej. NU acumuló 354 unidades con 21 reales → "split" falso de ×16,9).
+            # Saltamos los que ya tienen su firma registrada en el sync previo.
+            seen_prev = set(cached_state.get("processed_sigs", []))
+
             for ticker, movs in by_ticker.items():
                 if ticker not in acum:
                     acum[ticker] = {"qty": 0.0, "total_cost": 0.0, "total_cost_usd": 0.0}
@@ -386,7 +425,9 @@ class PPIClient:
                     if acum[ticker]["qty"] > 0 else 0.0
                 )
                 for m in movs:
-                    unit_price_ars = _ars_unit_price(m["price"], m["date"], cur_avg_ars, mep_history)
+                    if _mov_sig(ticker, m) in seen_prev:
+                        continue                     # ya contado en un sync anterior
+                    unit_price_ars = _ars_unit_price(m["price"], m["date"], cur_avg_ars, mep_history, m.get("currency", ""))
                     mep_dia        = _get_mep_for_date(m["date"], mep_history)
                     unit_price_usd = (unit_price_ars / mep_dia) if mep_dia > 0 else 0.0
                     if m["amount"] < 0:                          # compra
@@ -419,10 +460,22 @@ class PPIClient:
             if pos["qty"] > 0 and pos["total_cost_usd"] > 0
         }
 
+        # Firmas de movimientos recientes para deduplicar el buffer en el próximo
+        # sync incremental. Sólo se guardan los de la ventana del buffer (con margen
+        # de 45 días) para acotar el tamaño del documento — el buffer real es de 5 días.
+        sig_cutoff = (now - timedelta(days=45)).strftime("%Y-%m-%d")
+        processed_sigs = [
+            _mov_sig(ticker, m)
+            for ticker, movs in by_ticker.items()
+            for m in movs
+            if (m.get("date") or "")[:10] >= sig_cutoff
+        ]
+
         new_state = {
             "full_sync_completed": True,
             "last_processed_date": latest_date,
             "ultima_actualizacion": now.isoformat(),
+            "processed_sigs": processed_sigs,
             "tickers": {
                 ticker: {
                     "qty":            round(pos["qty"], 6),

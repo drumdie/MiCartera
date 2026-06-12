@@ -314,12 +314,17 @@ async def sync_portfolio(request: Request, force_full: bool = False):
         if cache_snap.exists:
             cached = _decrypt_doc(cache_snap.to_dict(), "meta/avg_costs")
             if cached.get("full_sync_completed"):
-                # Auto-detect: cache anterior no tiene total_cost_usd → forzar full
-                # recompute para obtener rendimiento USD histórico correcto (mejora v8+)
+                # Auto-detect: forzar recálculo full cuando el cache es de una versión
+                # anterior al fix. Dos señales:
+                #  - sin total_cost_usd → no tiene el rendimiento USD histórico (v8+)
+                #  - sin processed_sigs → cache previo a la deduplicación: puede tener
+                #    cantidades infladas por doble conteo del buffer incremental
+                #    (ej. NU 354 vs 21). Un full limpia la corrupción de una.
                 tickers_c = cached.get("tickers", {})
-                has_usd = any(v.get("total_cost_usd", 0) > 0 for v in tickers_c.values())
-                if tickers_c and not has_usd:
-                    logger.info("Cache sin total_cost_usd → recálculo completo para USD histórico")
+                has_usd  = any(v.get("total_cost_usd", 0) > 0 for v in tickers_c.values())
+                has_sigs = bool(cached.get("processed_sigs"))
+                if tickers_c and (not has_usd or not has_sigs):
+                    logger.info("Cache previo al fix (sin total_cost_usd/processed_sigs) → recálculo completo")
                 else:
                     cached_state = cached
     else:
@@ -385,49 +390,46 @@ async def sync_portfolio(request: Request, force_full: bool = False):
         if not ppi_has_cost:
             avg_cost_calc = avg_costs.get(ticker) or avg_costs.get(ticker[:10])
             if avg_cost_calc is not None:
-                # Bonos y ONs: PPI reporta precio en movimientos por 1 VN (Valor Nominal),
-                # pero las posiciones se cotizan por cada 100 VN (igual que el broker).
-                # Ej: AE38 → movimiento price=238.29 → precio real = 238.29 × 100 = 23.829
-                if cat in ("bonos", "ons"):
-                    avg_cost_calc = round(avg_cost_calc * 100, 6)
+                # (Eliminado el ×100 para bonos/ONs: en las posiciones de PPI
+                #  precio × cantidad = valor ya cierra — no hay escala de 100 VN.
+                #  El ×100 inflaba el costo 100× y rompía el rendimiento de bonos/ONs.)
 
-                # Ajuste por acciones corporativas (splits, cambios de ratio CEDEAR):
+                # Ajuste por acción corporativa (split / cambio de ratio CEDEAR):
                 # si la qty acumulada en movimientos difiere de la qty actual en la
-                # posición, el costo total se preserva pero se divide entre más acciones.
-                # Ej: XOM split 4→5: avg_cost × (4/5) = valor correcto por acción.
+                # posición, el costo por unidad se reescala proporcionalmente.
+                # Ej: XOM split 4→5: avg_cost × (4/5). Si la qty coincide (sin split),
+                # el factor es 1 → sin efecto. Requiere que el cache tenga la qty real
+                # (ver dedup en compute_avg_costs: un cache inflado dispararía un
+                # "split" falso, ej. NU 354 vs 21).
                 actual_qty = float(item.get("quantity", item.get("Amount", 0)))
                 acum_qty   = (avg_costs_state.get("tickers") or {}).get(
                     ticker, (avg_costs_state.get("tickers") or {}).get(ticker[:10], {})
                 ).get("qty", 0)
+                split_factor = 1.0
                 if acum_qty > 0 and actual_qty > 0 and abs(acum_qty - actual_qty) > 0.5:
-                    avg_cost_calc = round(avg_cost_calc * (acum_qty / actual_qty), 6)
+                    split_factor = acum_qty / actual_qty
 
-                # Corrección de doble conversión para instrumentos USD:
-                # Nuestra avg_cost viene de movimientos PPI (reportados en ARS).
-                # Si el instrumento tiene currency="Dolares", _transform_position
-                # va a multiplicar averagePrice × dolar_mep creyendo que está en USD.
-                # → Si inyectamos ARS directamente: ARS × MEP = valor ×1432 → -99%
-                # → Fix: inyectar en USD (÷ MEP) para que la conversión devuelva ARS correcto.
                 currency_item = item.get("currency", item.get("Currency", "Pesos"))
-                if "olar" in currency_item.lower() and dolar_mep > 0:
-                    item = {**item, "averagePrice": round(avg_cost_calc / dolar_mep, 6)}
+                if "olar" in currency_item.lower():
+                    # Instrumento cotizado en USD (bono/ON/FCI dólar): inyectar el costo
+                    # USD HISTÓRICO real (avg_costs_usd) — NO el costo en pesos dividido
+                    # por el MEP de hoy, que ignoraría que el MEP al momento de compra
+                    # era distinto y daría un rendimiento absurdo (ej. MTCGD +2122%).
+                    avg_usd_hist = avg_costs_usd.get(ticker) or avg_costs_usd.get(ticker[:10])
+                    if avg_usd_hist:
+                        item = {**item, "averagePrice": round(avg_usd_hist * split_factor, 6)}
+                    elif dolar_mep > 0:
+                        item = {**item, "averagePrice": round(avg_cost_calc * split_factor / dolar_mep, 6)}
                 else:
-                    item = {**item, "averagePrice": avg_cost_calc}
+                    item = {**item, "averagePrice": round(avg_cost_calc * split_factor, 6)}
         # Para acciones_ar, cedears, bonos y ons: inyectar costo USD histórico (MEP al día de
         # cada compra). Permite calcular rend_usd_pct y ganancia_usd_mep con el tipo de cambio
         # real, no con el MEP de hoy (que subestimaría el costo de compra en USD).
-        # Para bonos/ons: avg_costs_usd viene en unidades de 1 VN → escalar ×100 igual que avg_costs.
         if cat in ("acciones_ar", "cedears", "bonos", "ons"):
             avg_usd = avg_costs_usd.get(ticker) or avg_costs_usd.get(ticker[:10])
             if avg_usd:
-                if cat in ("bonos", "ons"):
-                    avg_usd = round(avg_usd * 100, 6)
-                # Ajuste por acciones corporativas (splits, cambios de ratio CEDEAR):
-                # igual que para avg_costs ARS, si qty acumulada en movimientos difiere de
-                # la qty actual en posición, el costo USD histórico se divide proporcionalmente.
-                # Ej: split 3:1 no reportado en movimientos → acum_qty=1, actual_qty=3
-                #     → avg_usd × (1/3) = precio por unidad post-split correcto.
-                # Si el split SÍ está en movimientos, acum_qty == actual_qty → sin efecto.
+                # (Eliminado el ×100 para bonos/ONs — misma razón que arriba.)
+                # Ajuste por acción corporativa (split): igual que para avg_costs ARS.
                 _actual_qty = float(item.get("quantity", item.get("Amount", 0)))
                 _acum_qty = (avg_costs_state.get("tickers") or {}).get(
                     ticker,
@@ -635,6 +637,7 @@ async def debug_movements(ticker: str, request: Request):
         movs_norm.append({
             "qty": qty, "price": price, "amount": amount,
             "date": date_key, "desc": mov.get("description", ""),
+            "currency": mov.get("currency", ""),
         })
     movs_norm.sort(key=lambda m: m["date"])
 
@@ -651,7 +654,7 @@ async def debug_movements(ticker: str, request: Request):
         tipo = "COMPRA" if m["amount"] < 0 else "VENTA"
 
         # Corrección USD → ARS igual que _ars_unit_price en compute_avg_costs
-        unit_price = _ars_unit_price(m["price"], m["date"], median_price, mep_history)
+        unit_price = _ars_unit_price(m["price"], m["date"], median_price, mep_history, m.get("currency", ""))
         correccion = None
         if unit_price != m["price"]:
             factor = round(unit_price / m["price"], 1)
