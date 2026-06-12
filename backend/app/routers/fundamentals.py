@@ -265,6 +265,15 @@ async def _fetch_one(yf_ticker: str, ticker: str, descripcion: str,
 # Endpoints
 # ---------------------------------------------------------------------------
 
+# Campos del análisis de Claude (los escribe save_analysis). refresh_fundamentals
+# NO debe pisarlos con los placeholders vacíos que emite _build_fundamental.
+_ANALYSIS_KEYS = (
+    "accion_tactica", "sentimiento", "tesis", "escenarios",
+    "q1_2026", "q1_fuente", "kpis", "comparable_ev_ebitda",
+    "analisis_extendido", "fuentes",
+)
+
+
 @router.post("/refresh")
 async def refresh_fundamentals(request: Request):
     """
@@ -340,7 +349,16 @@ async def refresh_fundamentals(request: Request):
         if not t:
             continue
         try:
-            # merge=True: preserva tesis/escenarios/accion_tactica existentes
+            # Preservar el análisis de Claude: _build_fundamental emite placeholders
+            # vacíos (accion_tactica=None, escenarios={bear:None,...}) que con merge=True
+            # PISARÍAN el análisis ya cargado. Leemos el doc y conservamos sus valores
+            # de análisis antes de escribir las métricas de mercado.
+            snap = fund_col.document(t).get()
+            if snap.exists:
+                ex = snap.to_dict() or {}
+                for k in _ANALYSIS_KEYS:
+                    if k in ex:
+                        fund[k] = ex[k]
             fund_col.document(t).set(fund, merge=True)
             ok += 1
         except Exception as exc:
@@ -367,12 +385,8 @@ async def save_analysis(ticker: str, request: Request):
 
     # Todos los campos que el esquema del prompt fundamental le pide a Claude
     # (contextBuilder.buildFundamentalContext) y que FundCard sabe renderizar.
-    allowed = {
-        "accion_tactica", "sentimiento", "tesis", "escenarios",
-        "q1_2026", "q1_fuente", "kpis", "comparable_ev_ebitda",
-        "analisis_extendido", "fuentes",
-    }
-    data = {k: v for k, v in body.items() if k in allowed}
+    # Misma lista que preserva refresh_fundamentals (_ANALYSIS_KEYS).
+    data = {k: v for k, v in body.items() if k in _ANALYSIS_KEYS}
     if not data:
         return {"status": "ok", "mensaje": "Sin campos para guardar"}
 
