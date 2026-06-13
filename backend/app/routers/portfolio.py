@@ -321,25 +321,35 @@ def read_user_meta(uid: str, doc_id: str) -> dict:
 # Endpoint
 # ---------------------------------------------------------------------------
 
-@router.post("/sync")
-async def sync_portfolio(request: Request, force_full: bool = False):
+class _NoFreshData(Exception):
     """
-    Sincroniza el portfolio del usuario desde PPI a Firestore.
-    No requiere body — usa el uid del Firebase token verificado por middleware.
-
-    Params:
-      force_full=true  Ignora el caché incremental y recalcula desde 5 años de movimientos.
-                       Usar después de un fix en la lógica de avg_cost o para verificar valores.
-
-    Manejo de datos obsoletos:
-    - Si PPI no responde (mercado cerrado, fin de semana): retorna status "sin_datos_frescos"
-      sin tocar Firestore — el frontend sigue mostrando los últimos datos conocidos.
-    - Si PPI responde posiciones pero no market data (mercado cerrado a mitad del proceso):
-      preserva el último rend_dia_pct conocido en lugar de sobreescribir con 0.
-    - Escribe is_stale=True en Firestore cuando los datos de mercado no están frescos.
+    PPI no devolvió datos frescos (mercado cerrado / PPI caído). Lleva la última sync
+    conocida para que el endpoint la reporte sin tocar Firestore.
     """
-    uid = request.state.uid
-    db = firestore.client()
+    def __init__(self, ultima_sync: str):
+        self.ultima_sync = ultima_sync
+
+
+async def _build_user_portfolio(
+    uid: str,
+    db,
+    *,
+    force_full: bool = False,
+    write_history: bool = True,
+) -> tuple[dict, bool, str, str, int]:
+    """
+    Núcleo compartido por POST /sync y POST /sync-source.
+
+    Hace TODO el trabajo costoso una sola vez (cache incremental de avg_cost, ajuste por
+    split/acción corporativa, costo USD histórico, renta cobrada, preservación de
+    rend_dia_pct) y persiste server-side el cache avg_costs y el snapshot de history.
+    NO escribe /users/{uid}/portfolio — eso lo decide cada endpoint: el legacy /sync lo
+    cifra con la clave global del backend; /sync-source lo devuelve para que el dispositivo
+    lo cifre con la DEK del usuario (modelo Android/offline-first).
+
+    Retorna (portfolio, mercado_abierto, now, modo_sync, total_posiciones).
+    Lanza _NoFreshData si PPI no responde (mercado cerrado / PPI caído).
+    """
     user_ref = db.collection("users").document(uid)
     meta_ref  = user_ref.collection("meta")
 
@@ -387,11 +397,7 @@ async def sync_portfolio(request: Request, force_full: bool = False):
             (d.get("ultima_sync", "") for d in existing.values()),
             default="",
         )
-        return {
-            "status": "sin_datos_frescos",
-            "stale": True,
-            "ultima_sync_exitosa": ultima_sync,
-        }
+        raise _NoFreshData(ultima_sync)
 
     # Leer tipo de cambio MEP: Firestore → PPI → dolarapi.com
     cotiz_snap = db.collection("market").document("cotizaciones").get()
@@ -521,8 +527,9 @@ async def sync_portfolio(request: Request, force_full: bool = False):
                 rend_dia = rend_dia_conocido[ticker]
             grupos[cat].append(_transform_position(item, dolar_mep, rend_dia, cat))
 
-    # Escribir en Firestore
+    # Construir el portfolio (sin escribirlo: cada endpoint decide cómo persistirlo)
     now = datetime.now(timezone.utc).isoformat()
+    portfolio: dict[str, dict] = {}
     for cat, posiciones in grupos.items():
         data = (
             _build_liquidez(posiciones)
@@ -530,10 +537,9 @@ async def sync_portfolio(request: Request, force_full: bool = False):
             else _build_categoria(posiciones)
         )
         data["ultima_sync"] = now
+        data["updatedAt"]   = now   # LWW del cache offline-first en el dispositivo
         data["is_stale"]    = not mercado_abierto
-        user_ref.collection("portfolio").document(cat).set(
-            _encrypt_doc(data, f"portfolio/{cat}")
-        )
+        portfolio[cat] = data
 
     # Persistir cache de costos promedios para syncs incrementales futuros
     meta_ref.document("avg_costs").set(
@@ -543,33 +549,71 @@ async def sync_portfolio(request: Request, force_full: bool = False):
     # Snapshot diario del valor total para calcular rendimiento mensual.
     # Guarda {YYYY-MM-DD: total_ars} en un único doc que se acumula con merge=True.
     # El frontend lo lee y calcula (valor_hoy - valor_30d_atrás) / valor_30d_atrás × 100.
-    total_snapshot = round(sum(
-        p.get("valor_corriente_ars", 0)
-        for posiciones in grupos.values()
-        for p in posiciones
-    ), 2)
-    if total_snapshot > 0:
-        bue_tz = timezone(timedelta(hours=-3))
-        today_bue = datetime.now(bue_tz).strftime("%Y-%m-%d")
-        history_ref = meta_ref.document("portfolio_history")
-        history_snap = history_ref.get()
-        history = (
-            _decrypt_doc(history_snap.to_dict(), "meta/portfolio_history")
-            if history_snap.exists
-            else {}
+    if write_history:
+        total_snapshot = round(sum(
+            p.get("valor_corriente_ars", 0)
+            for posiciones in grupos.values()
+            for p in posiciones
+        ), 2)
+        if total_snapshot > 0:
+            bue_tz = timezone(timedelta(hours=-3))
+            today_bue = datetime.now(bue_tz).strftime("%Y-%m-%d")
+            history_ref = meta_ref.document("portfolio_history")
+            history_snap = history_ref.get()
+            history = (
+                _decrypt_doc(history_snap.to_dict(), "meta/portfolio_history")
+                if history_snap.exists
+                else {}
+            )
+            history[today_bue] = total_snapshot
+            history_ref.set(
+                _encrypt_doc(history, "meta/portfolio_history")
+            )
+
+    modo_sync = "full_5y" if force_full or cached_state is None else "incremental"
+    total_posiciones = sum(len(v) for v in grupos.values())
+    return portfolio, mercado_abierto, now, modo_sync, total_posiciones
+
+
+@router.post("/sync")
+async def sync_portfolio(request: Request, force_full: bool = False):
+    """
+    Sincroniza el portfolio del usuario desde PPI a Firestore (modelo legacy: el backend
+    cifra con la clave global y escribe /users/{uid}/portfolio).
+    No requiere body — usa el uid del Firebase token verificado por middleware.
+
+    Params:
+      force_full=true  Ignora el caché incremental y recalcula desde 5 años de movimientos.
+
+    Si PPI no responde (mercado cerrado / caído), retorna "sin_datos_frescos" sin tocar
+    Firestore — el frontend sigue mostrando los últimos datos conocidos.
+    """
+    uid = request.state.uid
+    db = firestore.client()
+    user_ref = db.collection("users").document(uid)
+    try:
+        portfolio, mercado_abierto, now, modo_sync, total_posiciones = await _build_user_portfolio(
+            uid, db, force_full=force_full
         )
-        history[today_bue] = total_snapshot
-        history_ref.set(
-            _encrypt_doc(history, "meta/portfolio_history")
+    except _NoFreshData as exc:
+        return {
+            "status": "sin_datos_frescos",
+            "stale": True,
+            "ultima_sync_exitosa": exc.ultima_sync,
+        }
+
+    for cat, data in portfolio.items():
+        user_ref.collection("portfolio").document(cat).set(
+            _encrypt_doc(data, f"portfolio/{cat}")
         )
 
     return {
         "status": "ok",
         "uid": uid,
         "stale": not mercado_abierto,
-        "modo_sync": "full_5y" if force_full or cached_state is None else "incremental",
-        "categorias_sincronizadas": list(grupos.keys()),
-        "total_posiciones": sum(len(v) for v in grupos.values()),
+        "modo_sync": modo_sync,
+        "categorias_sincronizadas": list(portfolio.keys()),
+        "total_posiciones": total_posiciones,
         "timestamp": now,
     }
 
@@ -586,83 +630,16 @@ async def sync_portfolio_source(request: Request):
     """
     uid = request.state.uid
     db = firestore.client()
-
     try:
-        items, avg_result = await asyncio.gather(
-            ppi_client.get_account_positions(),
-            ppi_client.compute_avg_costs(None),
+        portfolio, mercado_abierto, now, _modo, total_posiciones = await _build_user_portfolio(
+            uid, db, force_full=False
         )
-        avg_costs, avg_costs_usd, avg_costs_state = avg_result
-    except Exception as exc:
-        logger.error("Sync-source PPI fallÃ³ para uid=%s: %s", uid, exc)
+    except _NoFreshData as exc:
         return {
             "status": "sin_datos_frescos",
             "stale": True,
-            "ultima_sync_exitosa": "",
+            "ultima_sync_exitosa": exc.ultima_sync,
         }
-
-    cotiz_snap = db.collection("market").document("cotizaciones").get()
-    cotiz = cotiz_snap.to_dict() if cotiz_snap.exists else {}
-    dolar_mep = float(cotiz.get("dolar_mep") or 0)
-
-    if dolar_mep <= 0:
-        try:
-            dolar_mep = await ppi_client.get_dolar_mep()
-        except Exception:
-            pass
-
-    grupos_raw: dict[str, list[dict]] = {
-        "acciones_ar": [], "cedears": [], "bonos": [], "ons": [], "fci": [], "liquidez": [],
-    }
-    renta_por_ticker: dict[str, dict] = (avg_costs_state.get("renta") or {})
-
-    for item in items:
-        cat = _normalize_categoria(item.get("Category", item.get("category", "")))
-        ticker = item.get("ticker", item.get("Ticker", ""))
-        ppi_has_cost = bool(item.get("averagePrice") or item.get("AverageCost"))
-        if not ppi_has_cost:
-            avg_cost_calc = avg_costs.get(ticker) or avg_costs.get(ticker[:10])
-            if avg_cost_calc is not None:
-                currency_item = item.get("currency", item.get("Currency", "Pesos"))
-                if "olar" in currency_item.lower():
-                    avg_usd_hist = avg_costs_usd.get(ticker) or avg_costs_usd.get(ticker[:10])
-                    if avg_usd_hist:
-                        item = {**item, "averagePrice": round(avg_usd_hist, 6)}
-                    elif dolar_mep > 0:
-                        item = {**item, "averagePrice": round(avg_cost_calc / dolar_mep, 6)}
-                else:
-                    item = {**item, "averagePrice": round(avg_cost_calc, 6)}
-
-        if cat in ("acciones_ar", "cedears", "bonos", "ons"):
-            avg_usd = avg_costs_usd.get(ticker) or avg_costs_usd.get(ticker[:10])
-            if avg_usd:
-                item = {**item, "averagePriceUSD": avg_usd}
-
-        renta = renta_por_ticker.get(ticker) or renta_por_ticker.get(ticker[:10])
-        if renta:
-            item = {**item, "rentaCobrada": renta}
-
-        grupos_raw[cat].append(item)
-
-    opening_prices = await _fetch_opening_prices(grupos_raw)
-    hay_tickers_con_mercado = any(grupos_raw.get(cat) for cat in _CATS_CON_MERCADO)
-    mercado_abierto = not hay_tickers_con_mercado or bool(opening_prices)
-
-    grupos: dict[str, list[dict]] = {}
-    for cat, raw_items in grupos_raw.items():
-        grupos[cat] = []
-        for item in raw_items:
-            ticker = item.get("ticker", item.get("Ticker", ""))
-            grupos[cat].append(_transform_position(item, dolar_mep, opening_prices.get(ticker), cat))
-
-    now = datetime.now(timezone.utc).isoformat()
-    portfolio = {}
-    for cat, posiciones in grupos.items():
-        data = _build_liquidez(posiciones) if cat == "liquidez" else _build_categoria(posiciones)
-        data["ultima_sync"] = now
-        data["updatedAt"] = now
-        data["is_stale"] = not mercado_abierto
-        portfolio[cat] = data
 
     return {
         "status": "ok",
@@ -671,7 +648,7 @@ async def sync_portfolio_source(request: Request):
         "modo_sync": "device_encrypt",
         "portfolio": portfolio,
         "categorias_sincronizadas": list(portfolio.keys()),
-        "total_posiciones": sum(len(v) for v in grupos.values()),
+        "total_posiciones": total_posiciones,
         "timestamp": now,
     }
 
@@ -775,6 +752,8 @@ async def debug_movements(ticker: str, request: Request):
                 if t.upper() == ticker.upper() or ticker.upper().startswith(t.upper()):
                     raw_movs.append(mov)
         except Exception as exc:
+            logger.warning("debug-movements %s: error en chunk %s→%s: %s",
+                           ticker, chunk_start.date(), chunk_end.date(), exc)
             raw_movs.append({"error": str(exc)})
         chunk_start = chunk_end + timedelta(days=1)
 

@@ -1,176 +1,240 @@
 # MiCartera — Roadmap de Desarrollo
 
-Seguimiento de fases y hitos del proyecto PWA de cartera de inversiones argentina.
+> Reescrito 2026-06-13. Consolida los 3 docs de revisión ([fixes.md](fixes.md),
+> [roadmapdebug08_06_26.md](roadmapdebug08_06_26.md), [spec_contrato_inversion.md](spec_contrato_inversion.md)),
+> la memoria del proyecto y la nueva visión de producto (multi-usuario por email +
+> app nativa Android). Ordenado por prioridad. Cada bloque es **autocontenible** para
+> poder implementarse en paralelo: indica owner sugerido y dependencias explícitas.
+
+## Leyenda
+
+- **Estado:** ✅ hecho · 🔧 en progreso · 🔜 listo para arrancar · ⏳ bloqueado/pospuesto
+- **Owner sugerido:** quién lo toma (Vos · Fable · Codex · Claude). No es rígido.
+- **Paralelizable:** si puede correr en simultáneo con otros bloques y de qué depende.
 
 ---
 
-## Fase 0: Infraestructura Base ✅ COMPLETADO
+## Visión de producto (el norte)
 
-**Objetivo:** Establecer la base técnica del proyecto.
+MiCartera deja de ser una app single-user local y pasa a ser un **producto multi-usuario**:
+cada persona se loguea con su email, sus datos quedan **aislados** del resto, sus
+**datos críticos viven cifrados** y **se descifran solo en su dispositivo** (la nube y
+nuestro backend solo ven ciphertext y actúan de intermediario con el broker). El acceso
+escala a **Android nativo (.apk)** con caché local SQLite. En el primer login el usuario
+completa un **onboarding** (datos de broker necesarios para correr la app) y **firma un
+contrato** que explica qué datos se usan y qué implica.
 
-- [x] Stack: FastAPI + React 18 + Vite + Firebase (Firestore + Auth + Hosting)
-- [x] Setup inicial del monorepo (`frontend/`, `backend/`, `functions/`)
-- [x] Firebase Authentication (email/password)
-- [x] Firestore schema base por categoría de activos
-- [x] Integración PPI broker API (credenciales en `.env`)
-- [x] CORS y middleware de auth en FastAPI
-- [x] Cloud Functions para scheduler de cotizaciones
-- [x] Firestore Security Rules (lectura por usuario, escritura solo backend)
-
-**Commits:** `8e7a3d7` (feat: Fase 0 — infraestructura base del proyecto)
-
----
-
-## Fase 1: Portfolio Sync & Display 🔄 EN PROGRESO
-
-**Objetivo:** Sincronizar posiciones desde PPI y mostrar cartera con precisión.
-
-### 1.1 Sync de Posiciones ✅
-- [x] `GET /api/portfolio/sync` — fetch desde PPI, escritura a Firestore
-- [x] Manejo de mercado cerrado (fin de semana) — preserva datos frescos
-- [x] `is_stale` flag para indicar al frontend que los datos no son frescos
-- [x] Fallback a últimos valores conocidos cuando PPI no responde
-
-### 1.2 Cálculo de Rendimiento ✅
-- [x] Rendimiento ARS (`rend_ars_pct`) — para acciones y FCI
-- [x] Rendimiento USD (`rend_usd_pct`) — para CEDEARs, bonos, ONs
-- [x] Rendimiento del día (`rend_dia_pct`) — desde `marketChangePercent` de PPI
-- [x] Toggle de moneda (ARS/MEP/CCL) en frontend — conversión en tiempo real
-- [x] Fallback: si rendimiento USD es 0, usa ARS como proxy
-
-### 1.3 Precio Promedio de Compra 🔧 CASI COMPLETO
-- [x] Fetch de 5 años de movimientos (3 años inicial → 5 años ahora)
-- [x] Detección de compras en USD MEP (outliers >50x)
-- [x] MEP histórico exacto desde **bluelytics.com.ar** (cache en memoria)
-- [x] **FIX CRÍTICO:** Usar `price × qty` (ejecución) en lugar de `abs(amount)` (incl. comisiones)
-  - ALUA: 1021.67 → ~1013 (elimina +0.8% comisión)
-  - LAR: 5109.94 → ~5069
-  - YPFD: 35652 → más cercano a 36013
-- [x] Cache incremental en `/users/{uid}/meta/avg_costs`
-  - Primera vez: 5 años, ~15s
-  - Syncs siguientes: solo desde `last_processed_date − 5d`, ~1-2s
-
-### 1.4 Display de Posiciones ✅
-- [x] `AssetRow.jsx` — acordeón con detalles de cada posición
-- [x] Campos dinámicos: cantidad, precio compra, precio actual, ganancia, rendimiento
-- [x] Labels de moneda dinámicos (ARS/MEP/CCL)
-- [x] CEDEARs: muestra precio BYMA + subyacente USD + ratio
-- [x] Bonos/ONs: precio paridad, TIR, vencimiento
-- [x] FCI: cuotaparte
-- [x] Tactical badge: `accion_tactica` (BUY, HOLD, SELL)
-- [x] Tesis corta y eventos próximos
-
-### 1.5 Cotizaciones en Tiempo Real ✅
-- [x] `GET /api/prices/cotizaciones` — MEP, CCL, BNA, Oficial, riesgo país
-- [x] `POST /api/prices/refresh` — fuerza polling inmediato
-- [x] MEP primario: PPI (AL30÷AL30D), fallback dolarapi.com
-- [x] CCL primario: PPI (GD30÷GD30D), fallback dolarapi.com
-- [x] BNA/Oficial: BCRA API (v2.0/datosvariable)
-- [x] Riesgo país: BCRA v2.0 var.5, fallback argentinadatos.com
-- [x] Preservación de valores en fin de semana (Firestore cache)
-- [x] Status "⚠ Mercado cerrado · datos del viernes" en Header
-
-### 1.6 Seguridad & Privacidad 🔧 PARCIAL
-- [x] Firebase Security Rules: `/users/{uid}/**` solo owner, `/market/**` read-only auth
-- [x] PrivacyMask component — oculta números con toggle
-- [x] localStorage para preferencias de privacidad
-- [x] **Encriptación at-rest** (implementada; requiere `DATA_ENCRYPTION_KEY` y re-sync para migrar docs existentes)
+Decisión de arquitectura de datos (2026-06-13): **Opción B** — el cliente lee Firestore
+directo, descifra en el dispositivo con **clave por usuario** asociada a su cuenta de
+email, y cachea en **SQLite local**. El backend solo intermedia lo que requiere
+credenciales de servidor (llamadas a PPI) y nunca ve plaintext.
 
 ---
 
-## Fase 2: Análisis Fundamental & Stress Testing 🔜 PLANEADO
+# Bloques por prioridad
 
-**Objetivo:** Herramientas avanzadas para análisis de riesgo y escenarios.
+## P0 · Hardening de seguridad pre-exposición
 
-### 2.1 Financial Fundamentals
-- [ ] `GET /api/stress/fundamentals/{ticker}` — EBITDA, ratios, márgenes
-- [ ] Cards con: P/E, P/B, ROE, deuda/EBITDA
-- [ ] Integración con fuentes (CNBC, Yahoo Finance, o scraping de reportes)
-
-### 2.2 Stress Testing & Scenarios
-- [ ] `POST /api/stress/test` — simula caídas de precio (−10%, −20%, −50%)
-- [ ] Bear/Base/Bull scenarios — impacto en cartera total
-- [ ] Cálculo de max drawdown histórico
-- [ ] Recomendaciones: qué vender primero en crisis
-
-### 2.3 Análisis Técnico (Opcional)
-- [ ] Integración TradingView widget (enlace ya en AssetRow)
-- [ ] Soporte para órdenes de stop-loss (coordinar con PPI)
-
-### 2.4 Calendarios de Eventos
-- [ ] `GET /api/catalysts/{ticker}` — earnings, dividendos, vencimientos
-- [ ] Timeline visual de eventos futuros
-- [ ] Alertas personalizables
+- **Objetivo:** cerrar los riesgos que hoy son tolerables solo porque el backend corre en
+  localhost, antes de exponerlo a internet (requisito para Android en 4G).
+- **Estado:** ✅ hecho (2026-06-13). P0.1 fail-closed + P0.3 desacople aplicados juntos (acoplados);
+  P0.2 ya estaba resuelto por refactors previos a la auditoría (solo se agregó un log de observabilidad).
+- **Por qué esta prioridad:** el día que el backend sea alcanzable desde internet, estos
+  dejan de ser teóricos. Son baratos y desbloquean todo lo demás sin deuda.
+- **Owner sugerido:** Claude · **Paralelizable:** sí, sin dependencias.
+- **Specs:**
+  - **P0.1 — `POST /api/prices/refresh` fail-closed.** Hoy: `if settings.ADMIN_UID and request.state.uid != settings.ADMIN_UID: 403` → si `ADMIN_UID` está vacío, NO bloquea. Cambiar a: si `ADMIN_UID` no está configurado → `503` (fail-closed); si está, exigir match. Archivo: [prices.py](backend/app/routers/prices.py), [config.py](backend/app/core/config.py).
+  - **P0.2 — Sanitizar errores de PPI al cliente.** No propagar detalle del broker en respuestas. Mensaje genérico al cliente + log interno detallado. Archivos: [portfolio.py](backend/app/routers/portfolio.py), [ppi_client.py](backend/app/services/ppi_client.py).
+  - **P0.3 — Separar `syncPPI` del refresh global de cotizaciones en frontend.** El sync de cartera (por usuario) no debe disparar una operación global compartida. Archivo: [AppContext.jsx](frontend/src/store/AppContext.jsx).
+  - **Criterio de éxito:** ningún usuario común puede gatillar el refresh global; errores de broker no llegan crudos al cliente.
 
 ---
 
-## Tareas Transversales 🔧
+## P1 · Identidad multi-usuario + onboarding + contrato de datos + clave por usuario
 
-### Encriptación at-rest
-- [x] Encrypt antes de guardar en Firestore (`portfolio/*`, `meta/avg_costs`, `meta/portfolio_history`)
-- [x] Key en `.env` / Google Cloud Secret Manager (`DATA_ENCRYPTION_KEY`)
-- [x] Frontend → backend API (no Firestore directo para portfolio/history)
-- [x] Pérdida de real-time onSnapshot, polling c/ 60s
-- [ ] Migrar datos existentes: configurar key y ejecutar `/api/portfolio/sync`
-- **Tarea:** `mcp__ccd_session__spawn_task` — "Encrypt portfolio data at rest"
-
-### Seguridad — Hallazgos Audit Codex (2026-04-30)
-
-**🟡 MEDIUM — Precio promedio** ✅ RESUELTO
-- [x] `rend_usd_pct = 0%` para CEDEARs — proxy: `rend_usd_pct = rend_ars_pct` (MEP constante durante tenencia) (`portfolio.py → _transform_position`)
-- [x] Bonos ÷100 — movimientos PPI en precio por 1 VN, posiciones por 100 VN → `avg_cost_calc × 100` para `bonos/ons` (`portfolio.py → sync_portfolio`)
-- [ ] **GD38 (pendiente)** — comprado hace >5 años, sin movimientos en ventana 5y. PPI no expone `averagePrice` en posiciones para bonos. Opciones: extender ventana a 7y, o aceptar `null` con nota en UI
-
-**🔴 HIGH** ✅ RESUELTO
-- [x] `POST /api/prices/refresh` — restringido a `ADMIN_UID` (env var `config.py`). Cooldown 30s adicional. (`prices.py`)
-- [x] Debug endpoints (`/debug-costs`, `/debug-movements/*`) eran públicos (sin auth) — ahora requieren Firebase token. Error en `debug-costs` ya no expone detalles del broker. (`middleware/auth.py`, `portfolio.py`)
-
-**🟡 MEDIUM**
-- [ ] Cloud Function: auth PPI usa `ApiKey`/`ApiSecret` en JSON, el backend usa 4 credenciales en headers — alinear antes de que el scheduler empiece a escribir precios 0 (`functions/main.py:51`)
-- [ ] `usePortfolio.js` inicializa `stressTest` con `MOCK_STRESS_TEST` — mostrar estado vacío/error para usuarios reales autenticados (`usePortfolio.js:94`)
-- [ ] Refresh de cotizaciones puede escribir 0 si todas las fuentes fallan — validar que los valores sean > 0 antes de persistir (parcialmente mitigado con `_NUMERIC_FIELDS`, revisar edge cases)
-
-**🟢 LOW**
-- [ ] Agregar config de ESLint al frontend — `npm run lint` falla por falta de archivo de configuración
-
-### Optimizaciones Futuras
-- [ ] Rate limiting en endpoints públicos
-- [ ] Caché distribuido (Redis) si llega a escala
-- [ ] Microservicios (solo si metricas lo justifiquen — no ahora)
-- [ ] Notifications: email/push en eventos (alertas de precios)
-
-### Testing
-- [ ] Tests unitarios en backend (pytest)
-- [ ] Tests de componentes en frontend (Vitest/React Testing Library)
-- [ ] E2E (Playwright/Cypress) — flujo completo auth → sync → display
-- [ ] Smoke tests en staging antes de prod
-
----
-
-## Estado Actual (2026-05-23)
-
-| Componente | Estado | Notas |
-|---|---|---|
-| **Infraestructura** | ✅ | FastAPI + Firebase funcionando |
-| **Auth** | ✅ | Firebase Auth integrado |
-| **Sync PPI** | ✅ | 5 años de movimientos, cache incremental |
-| **Avg Cost** | 🔧 | Ejecutando fix de comisiones (−0.8%) |
-| **MEP Histórico** | ✅ | Bluelytics integrado |
-| **Display** | ✅ | Cartera funcional con toggles |
-| **Cotizaciones** | ✅ | Mercado actualizado c/ fallbacks |
-| **Privacidad** | ✅ | Rules + Privacy toggle |
-| **Seguridad (audit)** | ✅ | 2 HIGH resueltos; 1 MEDIUM pendiente (GD38 avg_cost) |
-| **Encriptación** | ✅ | Implementada; migración efectiva en el próximo sync con key configurada |
-| **Fundamentals** | ⏳ | Fase 2 |
-| **Stress Testing** | ⏳ | Fase 2 |
+- **Objetivo:** que cada usuario se loguee por email, tenga sus datos **aislados**, complete
+  un onboarding de broker en el primer login, **firme** el contrato de uso de datos, y tenga
+  una **clave de cifrado propia** (no la global actual).
+- **Estado:** 🔧 parcial (2026-06-13). ✅ **P1.2** (envelope encryption: passphrase aparte +
+  recovery code, PBKDF2-SHA256 + AES-GCM, keywrap en `/users/{uid}/keywrap`, seam
+  `getUserDEKMaterial`). ✅ **P1.4** (firma de contrato de uso de datos → `consentimiento` en
+  `/users/{uid}`). ✅ **P1.3** (onboarding: 5 creds PPI cifradas con la DEK en
+  `/users/{uid}/broker/data`, omitible; `onboarding_completo`). Gate completo en `AuthGate`:
+  passphrase → contrato → broker → Dashboard. P1.1 parcial (email/password nativo por Codex).
+  **Pendientes: P1.1 (web), P1.5 (backend usa las creds por usuario, hoy aún lee `.env`).**
+- **Por qué esta prioridad:** es el cimiento de "producto multi-usuario" y **prerrequisito
+  de la Opción B** (la clave por usuario que descifra en el dispositivo nace acá). Sin esto,
+  Android Opción B no tiene de dónde sacar la clave.
+- **Owner sugerido:** Claude (backend/identidad) · **Paralelizable:** sí; P2 (Contrato UI) y
+  el scaffolding de P3 pueden avanzar en paralelo. La integración de la clave real con P3
+  depende de P1.2.
+- **Specs:**
+  - **P1.1 — Auth por email.** Migrar/añadir a [useAuth.js](frontend/src/hooks/useAuth.js)
+    login email (email+password o magic-link Firebase). Mantener `uid` de Firebase como
+    identificador canónico; el email se asocia al `uid`. Aislamiento ya cubierto por
+    [firestore.rules](firestore.rules) (`isOwner(uid)`) — verificar que toda colección nueva
+    lo respete.
+  - **P1.2 — Clave de cifrado por usuario (envelope encryption).** Reemplazar el modelo de
+    `DATA_ENCRYPTION_KEY` global ([encryption.py](backend/app/services/encryption.py)) por:
+    - **DEK** (Data Encryption Key) aleatoria por usuario, generada en el dispositivo en el
+      primer login.
+    - **KEK** derivada de una passphrase del usuario (Argon2id/PBKDF2) definida en onboarding.
+    - Se guarda en Firestore **solo la DEK envuelta por la KEK** (`/users/{uid}/keywrap`).
+      Firestore nunca ve la DEK en claro. En un dispositivo nuevo: passphrase → KEK → unwrap DEK.
+    - **Trade-off a documentar en el contrato:** si el usuario pierde la passphrase, los datos
+      cifrados no son recuperables (no hay escrow del lado servidor). Decidir si se ofrece
+      recovery code de respaldo.
+  - **P1.3 — Onboarding primer login.** Cuestionario que captura los **datos de broker PPI por
+    usuario** (hoy las creds PPI viven en `.env` global → pasan a ser por usuario, cifradas con
+    la DEK del usuario). Campos mínimos: credenciales PPI necesarias para `ppi_client`, moneda
+    default, preferencias. Flag `onboarding_completo` en `/users/{uid}/profile`.
+  - **P1.4 — Contrato de uso de datos (firma).** Pantalla previa al uso que explique: qué datos
+    se guardan, que se cifran y se descifran solo en su dispositivo, que el backend solo
+    intermedia con el broker, qué implica. Registrar consentimiento (versión + timestamp) en
+    `/users/{uid}/profile.consentimiento`.
+  - **P1.5 — PPI por usuario en backend.** `ppi_client` deja de leer creds de `.env` global;
+    recibe las del usuario autenticado (descifradas en el dispositivo y enviadas en la request,
+    o descifradas server-side solo en memoria durante la llamada). Definir cuál en P3 (depende
+    del flujo Opción B).
+  - **Criterio de éxito:** dos usuarios distintos ven solo sus datos; el primer login fuerza
+    onboarding + firma; la DEK envuelta vive en Firestore y la nube nunca ve plaintext.
 
 ---
 
-## Cómo Leer Este Roadmap
+## P2 · UI del Contrato de Inversión (módulo táctico)
 
-- **✅** = Completado y funcional
-- **🔧** = En progreso / requiere ajustes
-- **🔜** = Planeado para próximas fases
-- **⏳** = Waiting (bloqueado o pospuesto)
+- **Objetivo:** construir la capa visual del Contrato de Inversión sobre la lógica ya existente.
+- **Estado:** 🔜 **listo para arrancar** — diseño cerrado y lógica no-visual ya commiteada.
+- **Por qué esta prioridad:** es el principal valor agregado del producto y está **desbloqueado**
+  (el bug rend ONs/FCI que lo bloqueaba ya se resolvió en `8705834`/`c170c02`). No depende de P0/P1.
+- **Owner sugerido:** Fable (Claude Code CLI) · **Paralelizable:** sí, totalmente independiente.
+- **Specs:** ver [spec_contrato_inversion.md](spec_contrato_inversion.md) (diseño completo).
+  Lógica ya disponible (commit `bacbd19`):
+  - [contratoConfig.js](frontend/src/data/contratoConfig.js) — 5 roles, bandas default por rol,
+    templates de kill criteria, enums de output (`salud_tesis` ×4, `accion_tactica` ×6, `urgencia` ×4).
+  - [tacticalEngine.js](frontend/src/services/tacticalEngine.js) — `computeTactico` (capa
+    determinística) + `validateTacticalPayload` (valida enums del JSON pegado).
+  - [contextBuilder.js](frontend/src/services/contextBuilder.js) — `buildContratoContext`.
+  - [portfolioService.js](frontend/src/services/portfolioService.js) — `saveContrato`/`onSnapshotContratos`,
+    `saveRankingTactico`/`onSnapshotRankingTactico`.
+  - [fundamentals.py](backend/app/routers/fundamentals.py) — `_ANALYSIS_KEYS` ya acepta `tactico`.
+  - **Falta SOLO UI:** tab "Contratos" (agrupado por `_GRUPO_TEMATICO`), form por ticker
+    (select rol → autocompleta banda, tesis textarea, kill criteria chips con templates por rol),
+    autosave con debounce + indicador completo/pendiente/stale, panel de **ranking táctico**,
+    y `TacticalBadge` mapeando los 6 enums nuevos.
 
-**Para cambios en el roadmap:** actualizar este archivo + CLAUDE.md (`Reglas clave` → `Fases`).
+---
+
+## P3 · Android nativo (Capacitor) + capa de datos Opción B
+
+- **Objetivo:** correr MiCartera como `.apk` nativo en Android, con datos cifrados leídos directo
+  de Firestore, **descifrados en el dispositivo** con la clave del usuario, y cacheados en **SQLite local**.
+- **Estado:** 🔜 (scaffolding posible ya; la parte cripto real depende de P1.2)
+- **Por qué esta prioridad:** es el objetivo de "usarlo en el teléfono de verdad". Se hace después
+  de tener identidad/clave por usuario (P1), pero el shell y el plumbing arrancan en paralelo.
+- **Owner sugerido:** Codex/antigravity (capa SQLite+sync) · **Paralelizable:** sí; el shell
+  Capacitor y el plumbing SQLite arrancan contra una clave stub e integran la DEK real cuando P1.2 esté.
+- **Specs (por fases):**
+  - **P3.A — Atajo (apk usable rápido).** `npx cap add android` sobre la PWA actual ([vite.config.js](frontend/vite.config.js)
+    ya tiene PWA configurada). Build de un `.apk` que envuelve la PWA y habla con el backend
+    (deployado, ver nota). Valida toda la toolchain nativa antes de meter SQLite. Auth nativa:
+    `@capacitor-firebase/authentication`.
+  - **P3.B — Descifrado en dispositivo.** Portar `encrypt_payload`/`decrypt_payload`
+    ([encryption.py](backend/app/services/encryption.py)) a JS/cliente (Web Crypto / lib equivalente),
+    usando la **DEK del usuario** (de P1.2), no la global. El cliente lee el ciphertext de Firestore
+    con el SDK (las reglas de `portfolio` hoy son `allow read,write: if false` → habrá que abrir
+    lectura del ciphertext al owner, ya que deja de descifrarse server-side).
+  - **P3.C — SQLite local + sync.** `@capacitor-community/sqlite`. Espejo Firestore↔SQLite:
+    leer ciphertext → descifrar en dispositivo → persistir plaintext en SQLite local (privado del
+    dispositivo) → la UI lee de SQLite (offline-first). Definir estrategia de sync (pull on focus,
+    resolución de conflictos last-write-wins por `updatedAt`).
+  - **P3.D — Backend como intermediario.** El backend deja de descifrar; solo intermedia llamadas
+    a PPI con las creds del usuario (P1.5) y devuelve datos que el dispositivo cifra antes de guardar.
+  - **P3.E — Firma + Play Store (opcional).** Keystore, `.aab`, publicación.
+  - **Nota deploy backend:** Opción B reduce lo que hace el backend, pero las llamadas a PPI
+    siguen necesitando un backend alcanzable desde 4G → **reabre el deploy** (Cloud Run/Railway/Fly)
+    que antes se había descartado. Cerrar P0 antes de exponerlo.
+
+---
+
+## P4 · Refresh de UX/UI
+
+- **Objetivo:** actualizar la experiencia visual y de interacción de la app.
+- **Estado:** 🔜 (a definir alcance)
+- **Por qué esta prioridad:** alto impacto percibido; conviene hacerlo junto con/después de la
+  UI del Contrato (P2) para no rehacer estilos dos veces.
+- **Owner sugerido:** Fable · **Paralelizable:** sí, pero coordinar con P2 para estilos compartidos.
+- **Specs:**
+  - Referencia visual/UX: [cartera_app_v5b.html](cartera_app_v5b.html) (no copiar datos, sí estética).
+  - Revisar jerarquía de info en Dashboard, consistencia de KPI cards, badges tácticos, modo oscuro,
+    responsive mobile (clave para Android).
+  - Definir alcance concreto antes de arrancar (¿restyle total o pulido por secciones?).
+
+---
+
+## P5 · Calidad y deuda técnica
+
+- **Objetivo:** recuperar barreras de calidad y limpiar deuda.
+- **Estado:** mezcla — ver sub-ítems.
+- **Por qué esta prioridad:** importante pero no bloqueante; se intercala entre los bloques grandes.
+- **Owner sugerido:** Claude/Vos · **Paralelizable:** sí, cada sub-ítem es independiente.
+- **Specs:**
+  - **P5.1 — ESLint (P1 en docs).** No hay config; `npm run lint` falla. Agregar config mínima
+    React+hooks. [package.json](frontend/package.json). Doc Windows: `npm.cmd run lint`.
+  - **P5.2 — Stress mock visible (P1/MEDIUM).** `usePortfolio.js` arranca con `MOCK_STRESS_TEST`
+    → inicializar vacío + estados `loading/error/empty` para usuarios reales. [usePortfolio.js](frontend/src/hooks/usePortfolio.js).
+  - **P5.3 — Cloud Function PPI auth (MEDIUM).** `functions/main.py` usa auth distinta del backend
+    → puede escribir precios 0. Alinear. [functions/main.py](functions/main.py) vs [ppi_client.py](backend/app/services/ppi_client.py).
+  - **P5.4 — Bundle ~651 kB (P2).** Code splitting por página/sección, lazy load de widgets pesados.
+    Crítico para mobile. [vite.config.js](frontend/vite.config.js).
+  - **P5.5 — Scripts de debug (P2).** Inventariar `backend/*.py` sueltos (`debug_nvda.py`,
+    `force_full_sync.py`, `cargar_catalysts_v7.py`, `encrypt_existing_firestore_data.py`…),
+    mover a `scripts/`, borrar los cumplidos.
+  - **P5.6 — Tests (P2).** Backend: auth, prices, portfolio, stress. Frontend: `usePortfolio`,
+    `AppContext`, estados vacío/error. Smoke: login→sync→render.
+  - **P5.7 — GD38 avg_cost.** Bono comprado >5y atrás sin movimientos en ventana → queda en N/A
+    a propósito. Decidir si extender ventana o dejar N/A con nota UI.
+  - **P5.8 — Catalizadores carga inicial.** Correr una vez `cargar_catalysts_v7.py`, verificar en
+    tab Catalizadores, borrar el script. (Acción tuya.)
+
+---
+
+## Anexo: qué ya está hecho (Fase histórica)
+
+Resumen para que el roadmap deje de estar desalineado (ese era un hallazgo P1 en sí mismo):
+
+- **Infraestructura:** FastAPI + React/Vite + Firebase (Firestore + Auth + Hosting) + Cloud
+  Functions scheduler. PWA configurada (`vite-plugin-pwa`).
+- **Sync PPI:** 5 años de movimientos, cache incremental de avg_cost, manejo mercado cerrado, `is_stale`.
+- **Rendimientos:** ARS/USD/día + toggle de moneda. **Bug de rendimientos absurdos en bonos/ONs/FCI
+  RESUELTO** (5 causas; commit `8705834`). **Rendimiento TOTAL** con cupones/amortizaciones/dividendos
+  (commit `c170c02`).
+- **Tab Fundamental:** EBITDA fix (ARS→USD por moneda real), CEDEARs, KPI cards, riesgo país,
+  análisis Claude (q1/kpis/tesis/escenarios + análisis extendido + fuentes) y badges tácticos.
+  `refresh_fundamentals` ya no pisa el análisis de Claude (commit `d6b13f1`).
+- **Stress testing:** 5 escenarios AR, StressCard enriquecida.
+- **Cotizaciones:** MEP/CCL/BNA/Oficial/riesgo país con fallbacks y preservación fin de semana.
+- **Cifrado at-rest:** Fernet con clave **global** server-side (a migrar a clave por usuario en P1.2).
+- **Lógica del Contrato de Inversión (no-visual):** commit `bacbd19` (ver P2).
+
+---
+
+## Cómo trabajar este roadmap en paralelo (división sugerida)
+
+| Owner | Bloque | Arranca | Depende de |
+|---|---|---|---|
+| **Fable** | P2 — UI Contrato | ya | nada |
+| **Codex** | P3 — Capacitor + Opción B | P3.A ya | clave real de P1.2 |
+| **Claude** | P0 — Seguridad → P1 — Identidad/clave por usuario | ya | nada |
+
+Seam de integración Codex↔Claude: P3.B/P3.C usan la **DEK del usuario**; hasta que P1.2 esté,
+Codex trabaja contra una clave stub con la misma interfaz (`getUserDEK()`), y se swapea sin tocar
+la capa SQLite.
+
+---
+
+## Reglas del roadmap
+
+- Actualizar este archivo cuando cambie el estado de un bloque.
+- Reflejar cambios de fase en [CLAUDE.md](CLAUDE.md) (`Reglas clave`).
+- Ningún dato real (nominales, creds) en código ni en este doc.

@@ -22,6 +22,22 @@ service cloud.firestore {
         && isOwner(uid);
     }
 
+    // Keywrap: la DEK del usuario ENVUELTA (cifrada) bajo KEK(passphrase) y KEK(recovery).
+    // Firestore solo ve ciphertext; los secretos nunca salen del dispositivo. Solo el owner.
+    match /users/{uid}/keywrap/{docId} {
+      allow read, write: if isOwner(uid);
+    }
+
+    // Credenciales del broker: cifradas con la DEK del usuario (device-encrypt). Solo el
+    // owner, y la escritura exige ciphertext (igual que portfolio).
+    match /users/{uid}/broker/{docId} {
+      allow read: if isOwner(uid);
+      allow write: if isOwner(uid)
+        && request.resource.data._encrypted == true
+        && request.resource.data._enc_alg == "fernet-v1"
+        && request.resource.data.payload is string;
+    }
+
     match /users/{uid} {
       allow read, write: if isOwner(uid);
     }

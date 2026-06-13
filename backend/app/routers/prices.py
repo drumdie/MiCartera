@@ -288,7 +288,11 @@ async def refresh_cotizaciones(request: Request):
     preserva el último valor conocido de Firestore en lugar de escribir 0.
     Así el MEP del viernes permanece hasta que vuelva a abrirse el mercado.
     """
-    if settings.ADMIN_UID and request.state.uid != settings.ADMIN_UID:
+    # Fail-closed: si ADMIN_UID no está configurado, NO abrir el endpoint a cualquier
+    # usuario autenticado (escribe el doc global /market/cotizaciones, compartido por todos).
+    if not settings.ADMIN_UID:
+        raise HTTPException(status_code=503, detail="Refresh de cotizaciones no disponible")
+    if request.state.uid != settings.ADMIN_UID:
         raise HTTPException(status_code=403, detail="No autorizado")
 
     db = firestore.client()

@@ -12,6 +12,8 @@ import {
   signInNativeWithGoogle,
   signOutNative,
 } from '../services/nativeAuth'
+import { clearLocalUser } from '../services/localPortfolioStore'
+import { clearDEK } from '../services/userKey'
 
 const provider = new GoogleAuthProvider()
 
@@ -34,6 +36,13 @@ export function useAuth() {
   const signInWithEmail = (email, password) => signInNativeWithEmail(email, password)
 
   const signOut = async () => {
+    // Purgar el cache local (SQLite/localStorage) ANTES de desloguear: el plaintext
+    // descifrado del usuario no debe quedar en el dispositivo para el próximo usuario.
+    const uid = auth.currentUser?.uid
+    if (uid) {
+      try { await clearLocalUser(uid) } catch { /* best-effort */ }
+    }
+    clearDEK()   // borrar la DEK desbloqueada de memoria
     await signOutNative()
     return firebaseSignOut(auth)
   }

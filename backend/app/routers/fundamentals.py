@@ -304,6 +304,7 @@ async def refresh_fundamentals(request: Request):
 
     # (yf_ticker, ticker, descripcion, categoria, subyacente)
     tasks: list[tuple] = []
+    cedears_omitidos = 0
 
     for pos in (portfolio.get("cedears", {}).get("posiciones") or []):
         ticker = pos.get("ticker", "")
@@ -315,6 +316,17 @@ async def refresh_fundamentals(request: Request):
         sub = pos.get("subyacente_usd") or _CEDEAR_OVERRIDE.get(ticker) or ticker
         if sub:
             tasks.append((sub, ticker or sub, pos.get("descripcion", ""), "cedear", sub))
+        else:
+            # sub solo es falsy si NO hay subyacente_usd, ni override, y el ticker viene
+            # vacío → la posición no se puede mapear a un símbolo Yahoo y se
+            # omitiría en silencio. Logueamos para diagnosticar el bug "CEDEARs no
+            # aparecen en Fundamentales" sin tener que adivinar.
+            cedears_omitidos += 1
+            logger.warning(
+                "Fundamentales: CEDEAR omitido sin subyacente_usd/override/ticker — "
+                "ticker=%r desc=%r",
+                ticker, pos.get("descripcion", ""),
+            )
 
     for pos in (portfolio.get("acciones_ar", {}).get("posiciones") or []):
         t = pos.get("ticker", "")
@@ -322,7 +334,11 @@ async def refresh_fundamentals(request: Request):
             tasks.append((f"{t}.BA", t, pos.get("descripcion", ""), "accion_ar", None))
 
     if not tasks:
-        return {"status": "ok", "mensaje": "No hay tickers para actualizar"}
+        return {
+            "status": "ok",
+            "mensaje": "No hay tickers para actualizar",
+            "cedears_omitidos": cedears_omitidos,
+        }
 
     # Fetch en lotes de 5 simultáneos para no saturar Yahoo Finance
     BATCH = 5
@@ -373,6 +389,7 @@ async def refresh_fundamentals(request: Request):
         "tickers_actualizados": ok,
         "tickers_sin_datos":    len(sin_datos_tickers),
         "sin_datos_detalle":    sin_datos_tickers,
+        "cedears_omitidos":     cedears_omitidos,
         "detalle":              [r.get("ticker") for r in results],
     }
 

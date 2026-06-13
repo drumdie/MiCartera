@@ -10,12 +10,27 @@ async function cachePlainPortfolioDoc(uid, docId, data) {
   await saveLocalDocument(uid, 'portfolio', docId, data)
 }
 
-export async function pullPortfolioFromFirestore(uid) {
-  const snap = await getDocs(collection(db, 'users', uid, 'portfolio'))
-  await Promise.all(snap.docs.map(async item => {
+// Descifra y cachea cada doc de forma independiente. Un doc ilegible (ej. cifrado con la
+// clave global legacy durante la transición) se saltea sin tirar abajo los demás. Solo si
+// NINGÚN doc se pudo descifrar (y había docs) se lanza error, para que el caller caiga al
+// fallback legacy /api/portfolio.
+async function decryptAndCacheDocs(uid, docs) {
+  const results = await Promise.allSettled(docs.map(async item => {
     const plain = await decryptPayload(item.data())
     await cachePlainPortfolioDoc(uid, item.id, plain)
   }))
+  const ok = results.filter(r => r.status === 'fulfilled').length
+  if (ok < results.length) {
+    console.warn(`[portfolioSync] ${results.length - ok}/${results.length} docs no se pudieron descifrar (¿clave legacy?)`)
+  }
+  if (results.length > 0 && ok === 0) {
+    throw new Error('Portfolio cifrado ilegible con la DEK actual')
+  }
+}
+
+export async function pullPortfolioFromFirestore(uid) {
+  const snap = await getDocs(collection(db, 'users', uid, 'portfolio'))
+  await decryptAndCacheDocs(uid, snap.docs)
   return readLocalPortfolio(uid)
 }
 
@@ -24,10 +39,7 @@ export function subscribeEncryptedPortfolio(uid, onData, onError) {
     collection(db, 'users', uid, 'portfolio'),
     async snap => {
       try {
-        await Promise.all(snap.docs.map(async item => {
-          const plain = await decryptPayload(item.data())
-          await cachePlainPortfolioDoc(uid, item.id, plain)
-        }))
+        await decryptAndCacheDocs(uid, snap.docs)
         onData(await readLocalPortfolio(uid))
       } catch (err) {
         onError?.(err)
