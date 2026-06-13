@@ -6,6 +6,11 @@ import {
   onSnapshotFundamentals,
 } from '../services/portfolioService'
 import { apiGet } from '../services/apiClient'
+import {
+  pullPortfolioFromFirestore,
+  readCachedPortfolio,
+  subscribeEncryptedPortfolio,
+} from '../services/portfolioSync'
 
 const EMPTY_CAT  = { subtotal_ars: 0, pct_cartera: 0, posiciones: [] }
 const EMPTY_LIQ  = { subtotal_ars: 0, pct_cartera: 0, usd_total_aprox: 0, detalle: [] }
@@ -168,11 +173,21 @@ export function usePortfolio(uid) {
   const fetchPortfolio = useCallback(async () => {
     if (!uid) return
     try {
-      const data = await apiGet('/api/portfolio')
+      const cached = await readCachedPortfolio(uid)
+      setRawPortfolio(cached)
+      const data = await pullPortfolioFromFirestore(uid)
       setRawPortfolio(data)
       setLoading(false)
     } catch {
-      setLoading(false)
+      try {
+        // FIX: fallback temporal para datos cifrados con la clave global legacy.
+        // REASON: los documentos existentes no se pueden abrir con la DEK por usuario hasta migracion P1.2.
+        // IMPACT: Android/offline usa el camino nuevo; web/dev no queda bloqueado durante la transicion.
+        const data = await apiGet('/api/portfolio')
+        setRawPortfolio(data)
+      } finally {
+        setLoading(false)
+      }
     }
   }, [uid])
 
@@ -189,12 +204,31 @@ export function usePortfolio(uid) {
     await Promise.all([fetchPortfolio(), fetchPortfolioHistory()])
   }, [fetchPortfolio, fetchPortfolioHistory])
 
-  // Portfolio cifrado en Firestore: se lee por backend y se refresca por polling.
+  // Portfolio cifrado en Firestore: lectura directa del ciphertext, decrypt local y cache SQLite.
   useEffect(() => {
     if (!uid) { setLoading(false); return }
+    let active = true
     refreshPortfolio()
-    const id = window.setInterval(refreshPortfolio, 60000)
-    return () => window.clearInterval(id)
+    const unsub = subscribeEncryptedPortfolio(
+      uid,
+      data => {
+        if (!active) return
+        setRawPortfolio(data)
+        setLoading(false)
+      },
+      () => {
+        if (active) setLoading(false)
+      },
+    )
+    const onFocus = () => refreshPortfolio()
+    window.addEventListener('focus', onFocus)
+    document.addEventListener('visibilitychange', onFocus)
+    return () => {
+      active = false
+      unsub()
+      window.removeEventListener('focus', onFocus)
+      document.removeEventListener('visibilitychange', onFocus)
+    }
   }, [uid, refreshPortfolio])
 
   useEffect(() => {

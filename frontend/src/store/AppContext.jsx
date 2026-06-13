@@ -8,6 +8,7 @@ import {
 import { useAuth }      from '../hooks/useAuth'
 import { usePortfolio } from '../hooks/usePortfolio'
 import { apiPost } from '../services/apiClient'
+import { syncBrokerPortfolioToDevice } from '../services/portfolioSync'
 
 export const AppContext = createContext(null)
 
@@ -115,7 +116,7 @@ export function AppProvider({ children }) {
       // Cloud Functions cada 60s; NO las dispara el sync individual del usuario. Mezclarlas
       // acoplaba una operación de portfolio personal con una escritura global compartida
       // (P0.3). El sync de portfolio lee las cotizaciones ya frescas desde Firestore.
-      const result = await apiPost('/api/portfolio/sync')
+      const result = await syncBrokerPortfolioToDevice(user.uid)
       // status "sin_datos_frescos": PPI no disponible, Firestore intacto
       if (result.status === 'sin_datos_frescos') {
         setSyncError('Mercado cerrado — mostrando últimos datos conocidos')
