@@ -574,6 +574,108 @@ async def sync_portfolio(request: Request, force_full: bool = False):
     }
 
 
+@router.post("/sync-source")
+async def sync_portfolio_source(request: Request):
+    """
+    Devuelve portfolio transformado desde PPI sin descifrar ni escribir Firestore.
+
+    FIX: el backend queda como intermediario PPI para el flujo Android/offline-first.
+    REASON: el dispositivo cifra con la DEK del usuario y persiste ciphertext en Firestore.
+    IMPACT: este endpoint transporta plaintext solo en memoria/respuesta autenticada; no usa
+    DATA_ENCRYPTION_KEY ni toca /users/{uid}/portfolio.
+    """
+    uid = request.state.uid
+    db = firestore.client()
+
+    try:
+        items, avg_result = await asyncio.gather(
+            ppi_client.get_account_positions(),
+            ppi_client.compute_avg_costs(None),
+        )
+        avg_costs, avg_costs_usd, avg_costs_state = avg_result
+    except Exception as exc:
+        logger.error("Sync-source PPI fallÃ³ para uid=%s: %s", uid, exc)
+        return {
+            "status": "sin_datos_frescos",
+            "stale": True,
+            "ultima_sync_exitosa": "",
+        }
+
+    cotiz_snap = db.collection("market").document("cotizaciones").get()
+    cotiz = cotiz_snap.to_dict() if cotiz_snap.exists else {}
+    dolar_mep = float(cotiz.get("dolar_mep") or 0)
+
+    if dolar_mep <= 0:
+        try:
+            dolar_mep = await ppi_client.get_dolar_mep()
+        except Exception:
+            pass
+
+    grupos_raw: dict[str, list[dict]] = {
+        "acciones_ar": [], "cedears": [], "bonos": [], "ons": [], "fci": [], "liquidez": [],
+    }
+    renta_por_ticker: dict[str, dict] = (avg_costs_state.get("renta") or {})
+
+    for item in items:
+        cat = _normalize_categoria(item.get("Category", item.get("category", "")))
+        ticker = item.get("ticker", item.get("Ticker", ""))
+        ppi_has_cost = bool(item.get("averagePrice") or item.get("AverageCost"))
+        if not ppi_has_cost:
+            avg_cost_calc = avg_costs.get(ticker) or avg_costs.get(ticker[:10])
+            if avg_cost_calc is not None:
+                currency_item = item.get("currency", item.get("Currency", "Pesos"))
+                if "olar" in currency_item.lower():
+                    avg_usd_hist = avg_costs_usd.get(ticker) or avg_costs_usd.get(ticker[:10])
+                    if avg_usd_hist:
+                        item = {**item, "averagePrice": round(avg_usd_hist, 6)}
+                    elif dolar_mep > 0:
+                        item = {**item, "averagePrice": round(avg_cost_calc / dolar_mep, 6)}
+                else:
+                    item = {**item, "averagePrice": round(avg_cost_calc, 6)}
+
+        if cat in ("acciones_ar", "cedears", "bonos", "ons"):
+            avg_usd = avg_costs_usd.get(ticker) or avg_costs_usd.get(ticker[:10])
+            if avg_usd:
+                item = {**item, "averagePriceUSD": avg_usd}
+
+        renta = renta_por_ticker.get(ticker) or renta_por_ticker.get(ticker[:10])
+        if renta:
+            item = {**item, "rentaCobrada": renta}
+
+        grupos_raw[cat].append(item)
+
+    opening_prices = await _fetch_opening_prices(grupos_raw)
+    hay_tickers_con_mercado = any(grupos_raw.get(cat) for cat in _CATS_CON_MERCADO)
+    mercado_abierto = not hay_tickers_con_mercado or bool(opening_prices)
+
+    grupos: dict[str, list[dict]] = {}
+    for cat, raw_items in grupos_raw.items():
+        grupos[cat] = []
+        for item in raw_items:
+            ticker = item.get("ticker", item.get("Ticker", ""))
+            grupos[cat].append(_transform_position(item, dolar_mep, opening_prices.get(ticker), cat))
+
+    now = datetime.now(timezone.utc).isoformat()
+    portfolio = {}
+    for cat, posiciones in grupos.items():
+        data = _build_liquidez(posiciones) if cat == "liquidez" else _build_categoria(posiciones)
+        data["ultima_sync"] = now
+        data["updatedAt"] = now
+        data["is_stale"] = not mercado_abierto
+        portfolio[cat] = data
+
+    return {
+        "status": "ok",
+        "uid": uid,
+        "stale": not mercado_abierto,
+        "modo_sync": "device_encrypt",
+        "portfolio": portfolio,
+        "categorias_sincronizadas": list(portfolio.keys()),
+        "total_posiciones": sum(len(v) for v in grupos.values()),
+        "timestamp": now,
+    }
+
+
 @router.get("")
 async def get_portfolio(request: Request):
     """Devuelve el portfolio desencriptado del usuario autenticado."""
