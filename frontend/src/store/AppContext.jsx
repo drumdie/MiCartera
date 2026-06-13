@@ -67,7 +67,7 @@ export function AppProvider({ children }) {
   const [syncError, setSyncError] = useState(null)
   const [lastSync,  setLastSync]  = useState(null)
 
-  const { user, loading: authLoading, signIn, signOut } = useAuth()
+  const { user, loading: authLoading, signIn, signInWithEmail, signOut, isNativeAuth } = useAuth()
 
   const {
     portfolio:     fsPortfolio,
@@ -111,7 +111,10 @@ export function AppProvider({ children }) {
     setSyncing(true)
     setSyncError(null)
     try {
-      await apiPost('/api/prices/refresh')
+      // Las cotizaciones globales (/market/cotizaciones) las refresca el scheduler de
+      // Cloud Functions cada 60s; NO las dispara el sync individual del usuario. Mezclarlas
+      // acoplaba una operación de portfolio personal con una escritura global compartida
+      // (P0.3). El sync de portfolio lee las cotizaciones ya frescas desde Firestore.
       const result = await apiPost('/api/portfolio/sync')
       // status "sin_datos_frescos": PPI no disponible, Firestore intacto
       if (result.status === 'sin_datos_frescos') {
@@ -141,7 +144,7 @@ export function AppProvider({ children }) {
 
   return (
     <AppContext.Provider value={{
-      user, authLoading, signIn, signOut, isDemo,
+      user, authLoading, signIn, signInWithEmail, signOut, isNativeAuth, isDemo,
       activeCurrency, setActiveCurrency,
       privacyOn, setPrivacyOn,
       distMode, setDistMode,

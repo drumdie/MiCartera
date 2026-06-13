@@ -6,6 +6,12 @@ import {
   onAuthStateChanged,
 } from 'firebase/auth'
 import { auth } from '../services/firebase'
+import {
+  isNativeAuthAvailable,
+  signInNativeWithEmail,
+  signInNativeWithGoogle,
+  signOutNative,
+} from '../services/nativeAuth'
 
 const provider = new GoogleAuthProvider()
 
@@ -21,9 +27,16 @@ export function useAuth() {
     return unsub
   }, [])
 
-  const signIn = () => signInWithPopup(auth, provider)
+  const signIn = () => isNativeAuthAvailable()
+    ? signInNativeWithGoogle()
+    : signInWithPopup(auth, provider)
 
-  const signOut = () => firebaseSignOut(auth)
+  const signInWithEmail = (email, password) => signInNativeWithEmail(email, password)
 
-  return { user, loading, signIn, signOut }
+  const signOut = async () => {
+    await signOutNative()
+    return firebaseSignOut(auth)
+  }
+
+  return { user, loading, signIn, signInWithEmail, signOut, isNativeAuth: isNativeAuthAvailable() }
 }
