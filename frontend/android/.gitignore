@@ -62,7 +62,8 @@ captures/
 .cxx/
 
 # Google Services (e.g. APIs or Firebase)
-# google-services.json
+# Config de cliente de Firebase: NO se commitea (cada máquina lo baja de Firebase Console).
+google-services.json
 
 # Freeline
 freeline.py
