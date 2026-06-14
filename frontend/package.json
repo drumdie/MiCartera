@@ -10,7 +10,7 @@
     "lint": "eslint src --ext .js,.jsx",
     "android:sync": "npm run build && cap sync android",
     "android:open": "cap open android",
-    "android:apk": "npm run android:sync && cd android && gradlew assembleDebug"
+    "android:apk": "npm run android:sync && cd android && .\\gradlew.bat assembleDebug"
   },
   "dependencies": {
     "@capacitor-community/sqlite": "^6.0.2",

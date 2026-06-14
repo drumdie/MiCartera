@@ -13,4 +13,8 @@ ext {
     androidxJunitVersion = '1.1.5'
     androidxEspressoCoreVersion = '3.5.1'
     cordovaAndroidVersion = '10.1.1'
+    // @capacitor-firebase/authentication: empaquetar play-services-auth (GoogleSignIn).
+    // Sin esto el plugin usa compileOnly → NoClassDefFoundError al arrancar (crash con Google sign-in).
+    rgcfaIncludeGoogle = true
+    playServicesAuthVersion = '21.0.0'
 }
