@@ -1,0 +1,26 @@
+# Entornos / cache
+.venv/
+venv/
+__pycache__/
+*.pyc
+.pytest_cache/
+
+# Secretos y config local: NUNCA van a la imagen.
+# Los valores se inyectan como env vars / secrets de Cloud Run.
+.env
+.env.*
+serviceAccountKey*.json
+*serviceaccount*.json
+
+# Docs y control de versiones
+*.md
+.git/
+.gitignore
+
+# Scripts de debug / utilitarios (no son parte del servicio)
+debug_*.py
+debug_firestore_*.py
+run_sync_direct.py
+force_full_sync.py
+cargar_catalysts_v7.py
+encrypt_existing_firestore_data.py
