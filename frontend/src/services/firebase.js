@@ -1,6 +1,8 @@
 import { initializeApp } from 'firebase/app'
 import { getFirestore, connectFirestoreEmulator } from 'firebase/firestore'
 import { getAuth, connectAuthEmulator } from 'firebase/auth'
+import { initializeAppCheck, ReCaptchaV3Provider } from 'firebase/app-check'
+import { Capacitor } from '@capacitor/core'
 
 const firebaseConfig = {
   apiKey:            import.meta.env.VITE_FIREBASE_API_KEY,
@@ -12,6 +14,19 @@ const firebaseConfig = {
 }
 
 const app = initializeApp(firebaseConfig)
+
+// Firebase App Check (web): atesta que los requests vienen de nuestra app genuina.
+// Solo se activa si VITE_RECAPTCHA_SITE_KEY está seteada → sin la key no hace nada (no rompe).
+// En nativo (apk) NO se usa reCAPTCHA: ahí corresponde el provider Play Integrity vía plugin
+// nativo (pendiente). El ENFORCEMENT se habilita en el Console SOLO cuando web + android mandan
+// tokens válidos; antes de eso, romería el cliente.
+const recaptchaSiteKey = import.meta.env.VITE_RECAPTCHA_SITE_KEY
+if (recaptchaSiteKey && !Capacitor.isNativePlatform()) {
+  initializeAppCheck(app, {
+    provider: new ReCaptchaV3Provider(recaptchaSiteKey),
+    isTokenAutoRefreshEnabled: true,
+  })
+}
 
 export const db   = getFirestore(app)
 export const auth = getAuth(app)
