@@ -3,6 +3,7 @@ import { db } from './firebase'
 import { apiPost } from './apiClient'
 import { decryptPayload, encryptPayload } from './fernet'
 import { readLocalPortfolio, saveLocalDocument } from './localPortfolioStore'
+import { loadBrokerCreds } from './profileService'
 
 const CATEGORIES = ['acciones_ar', 'cedears', 'bonos', 'ons', 'fci', 'liquidez']
 
@@ -64,7 +65,18 @@ export async function persistBrokerPortfolio(uid, portfolio) {
 }
 
 export async function syncBrokerPortfolioToDevice(uid) {
-  const result = await apiPost('/api/portfolio/sync-source')
+  const brokerCredentials = await loadBrokerCreds(uid)
+  const hasBrokerCredentials = brokerCredentials && [
+    'authorized_client',
+    'client_key',
+    'api_key',
+    'api_secret',
+    'account_number',
+  ].every(key => String(brokerCredentials[key] || '').trim())
+  const body = hasBrokerCredentials
+    ? { broker_credentials: brokerCredentials }
+    : null
+  const result = await apiPost('/api/portfolio/sync-source', body)
   if (result?.portfolio) {
     await persistBrokerPortfolio(uid, result.portfolio)
   }

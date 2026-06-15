@@ -1,7 +1,7 @@
 import { useState, useEffect, useMemo } from 'react'
 import { useApp } from '../store/AppContext'
 import { usePrivacy } from '../hooks/usePrivacy'
-import { formatARS, formatUSD } from '../utils/formatters'
+import { formatARS, formatUSD, usdAtRate } from '../utils/formatters'
 import { TICKERS_TV } from '../data/mockPortfolio'
 import { apiPost } from '../services/apiClient'
 import { addCatalyst, deleteCatalyst, replaceCatalysts } from '../services/portfolioService'
@@ -166,9 +166,9 @@ export default function Dashboard() {
   const totalDisp = (() => {
     switch (activeCurrency) {
       case 'ARS': return formatARS(totalARS)
-      case 'MEP': return formatUSD(totalARS / cotizaciones.dolar_mep)
-      case 'CCL': return formatUSD(totalARS / cotizaciones.dolar_ccl)
-      case 'BNA': return formatARS(totalARS)
+      case 'MEP': return usdAtRate(totalARS, cotizaciones.dolar_mep)
+      case 'CCL': return usdAtRate(totalARS, cotizaciones.dolar_ccl)
+      case 'BNA': return usdAtRate(totalARS, cotizaciones.dolar_oficial)
       default:    return formatARS(totalARS)
     }
   })()
@@ -176,7 +176,7 @@ export default function Dashboard() {
     switch (activeCurrency) {
       case 'MEP': return `Cotización Dólar MEP: ${formatARS(cotizaciones.dolar_mep)}`
       case 'CCL': return `Cotización Dólar CCL: ${formatARS(cotizaciones.dolar_ccl)}`
-      case 'BNA': return 'Ref. tipo de cambio BNA'
+      case 'BNA': return `Cotización Dólar BNA: ${formatARS(cotizaciones.dolar_oficial)}`
       default: return ''
     }
   })()
@@ -191,8 +191,9 @@ export default function Dashboard() {
   const rend30dDisp = rend30d ? (() => {
     const abs = rend30d.absARS
     switch (activeCurrency) {
-      case 'MEP': return formatUSD(abs / cotizaciones.dolar_mep)
-      case 'CCL': return formatUSD(abs / cotizaciones.dolar_ccl)
+      case 'MEP': return usdAtRate(abs, cotizaciones.dolar_mep)
+      case 'CCL': return usdAtRate(abs, cotizaciones.dolar_ccl)
+      case 'BNA': return usdAtRate(abs, cotizaciones.dolar_oficial)
       default:    return formatARS(abs)
     }
   })() : null

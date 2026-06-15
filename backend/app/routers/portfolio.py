@@ -14,10 +14,11 @@ import asyncio
 import logging
 from datetime import datetime, timezone, timedelta
 
-from fastapi import APIRouter, HTTPException, Request
+from fastapi import APIRouter, Body, HTTPException, Request
 from firebase_admin import firestore
+from pydantic import BaseModel
 
-from app.services.ppi_client import ppi_client, PPIError
+from app.services.ppi_client import PPICredentials, ppi_client, PPIError
 from app.services.encryption import (
     EncryptionNotConfigured,
     decrypt_payload,
@@ -27,6 +28,51 @@ from app.services.encryption import (
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api/portfolio", tags=["portfolio"])
+
+
+class BrokerCredentialsPayload(BaseModel):
+    authorized_client: str = ""
+    client_key: str = ""
+    api_key: str = ""
+    api_secret: str = ""
+    account_number: str = ""
+
+    def _values(self) -> list[str]:
+        return [
+            self.authorized_client.strip(),
+            self.client_key.strip(),
+            self.api_key.strip(),
+            self.api_secret.strip(),
+            self.account_number.strip(),
+        ]
+
+    def has_any(self) -> bool:
+        return any(self._values())
+
+    def is_complete(self) -> bool:
+        return all(self._values())
+
+    def to_ppi_credentials(self) -> PPICredentials:
+        return PPICredentials(
+            authorized_client=self.authorized_client.strip(),
+            client_key=self.client_key.strip(),
+            api_key=self.api_key.strip(),
+            api_secret=self.api_secret.strip(),
+            account_number=self.account_number.strip(),
+        )
+
+
+class SyncSourceRequest(BaseModel):
+    broker_credentials: BrokerCredentialsPayload | None = None
+
+
+def _credentials_from_payload(payload: SyncSourceRequest | None) -> PPICredentials | None:
+    broker_credentials = payload.broker_credentials if payload else None
+    if not broker_credentials or not broker_credentials.has_any():
+        return None
+    if not broker_credentials.is_complete():
+        raise HTTPException(status_code=400, detail="Credenciales PPI incompletas")
+    return broker_credentials.to_ppi_credentials()
 
 # ---------------------------------------------------------------------------
 # Mapeo de categorías PPI → MiCartera
@@ -56,7 +102,10 @@ def _normalize_categoria(ppi_category: str) -> str:
     return _CATEGORIA_MAP.get(ppi_category.lower().strip(), "acciones_ar")
 
 
-async def _fetch_opening_prices(grupos_raw: dict[str, list[dict]]) -> dict[str, float]:
+async def _fetch_opening_prices(
+    grupos_raw: dict[str, list[dict]],
+    ppi_credentials: PPICredentials | None = None,
+) -> dict[str, float]:
     """Consulta MarketData/Current en paralelo y retorna {ticker: openingPrice}."""
     tasks: list[tuple[str, str, str]] = []
     for cat, (inst_type, settlement) in _MARKET_PARAMS.items():
@@ -69,7 +118,7 @@ async def _fetch_opening_prices(grupos_raw: dict[str, list[dict]]) -> dict[str, 
         return {}
 
     results = await asyncio.gather(
-        *(ppi_client.get_market_data(t, it, s) for t, it, s in tasks),
+        *(ppi_client.get_market_data(t, it, s, credentials=ppi_credentials) for t, it, s in tasks),
         return_exceptions=True,
     )
 
@@ -308,7 +357,15 @@ def read_user_portfolio(uid: str) -> dict[str, dict]:
         fallback = {"posiciones": [], "subtotal_ars": 0}
         if cat == "liquidez":
             fallback = {"detalle": [], "subtotal_ars": 0}
-        portfolio[cat] = _decrypt_doc(snap.to_dict(), f"portfolio/{cat}") if snap.exists else fallback
+        if not snap.exists:
+            portfolio[cat] = fallback
+            continue
+        try:
+            portfolio[cat] = _decrypt_doc(snap.to_dict(), f"portfolio/{cat}")
+        except HTTPException:
+            # device-encrypted (DEK del usuario): el backend no lo descifra → vacío. En el modelo
+            # device-encrypt es el dispositivo quien lee/descifra el portfolio, no este endpoint.
+            portfolio[cat] = fallback
     return portfolio
 
 
@@ -336,6 +393,7 @@ async def _build_user_portfolio(
     *,
     force_full: bool = False,
     write_history: bool = True,
+    ppi_credentials: PPICredentials | None = None,
 ) -> tuple[dict, bool, str, str, int]:
     """
     Núcleo compartido por POST /sync y POST /sync-source.
@@ -359,7 +417,14 @@ async def _build_user_portfolio(
     for cat in _CATS:
         snap = user_ref.collection("portfolio").document(cat).get()
         if snap.exists:
-            existing[cat] = _decrypt_doc(snap.to_dict(), f"portfolio/{cat}")
+            try:
+                existing[cat] = _decrypt_doc(snap.to_dict(), f"portfolio/{cat}")
+            except HTTPException:
+                # Flujo device-encrypt: el portfolio se cifra con la DEK del usuario (no con la
+                # clave global del backend) → el backend NO puede leerlo, y está bien. Solo se
+                # pierde la preservación de rend_dia de esa categoría; el dispositivo igual lo
+                # sobrescribe con el sync nuevo. NO es un error fatal.
+                logger.info("portfolio/%s no legible por el backend (device-encrypted) — se omite", cat)
 
     cached_state = None
     if not force_full:
@@ -387,8 +452,8 @@ async def _build_user_portfolio(
     # Intentar sync desde PPI. Si falla, Firestore queda intacto.
     try:
         items, avg_result = await asyncio.gather(
-            ppi_client.get_account_positions(),
-            ppi_client.compute_avg_costs(cached_state),
+            ppi_client.get_account_positions(credentials=ppi_credentials),
+            ppi_client.compute_avg_costs(cached_state, credentials=ppi_credentials),
         )
         avg_costs, avg_costs_usd, avg_costs_state = avg_result
     except Exception as exc:
@@ -406,7 +471,7 @@ async def _build_user_portfolio(
 
     if dolar_mep <= 0:
         try:
-            dolar_mep = await ppi_client.get_dolar_mep()
+            dolar_mep = await ppi_client.get_dolar_mep(credentials=ppi_credentials)
         except Exception:
             pass
 
@@ -501,7 +566,7 @@ async def _build_user_portfolio(
         grupos_raw[cat].append(item)
 
     # Obtener precios de apertura en paralelo para calcular rend_dia_pct
-    opening_prices = await _fetch_opening_prices(grupos_raw)
+    opening_prices = await _fetch_opening_prices(grupos_raw, ppi_credentials=ppi_credentials)
 
     # Detectar si el mercado está abierto: hay instrumentos que requieren market data
     # pero opening_prices llegó vacío → mercado cerrado o fuera de horario.
@@ -619,7 +684,10 @@ async def sync_portfolio(request: Request, force_full: bool = False):
 
 
 @router.post("/sync-source")
-async def sync_portfolio_source(request: Request):
+async def sync_portfolio_source(
+    request: Request,
+    payload: SyncSourceRequest | None = Body(default=None),
+):
     """
     Devuelve portfolio transformado desde PPI sin descifrar ni escribir Firestore.
 
@@ -630,9 +698,10 @@ async def sync_portfolio_source(request: Request):
     """
     uid = request.state.uid
     db = firestore.client()
+    ppi_credentials = _credentials_from_payload(payload)
     try:
         portfolio, mercado_abierto, now, _modo, total_posiciones = await _build_user_portfolio(
-            uid, db, force_full=False
+            uid, db, force_full=False, ppi_credentials=ppi_credentials
         )
     except _NoFreshData as exc:
         return {

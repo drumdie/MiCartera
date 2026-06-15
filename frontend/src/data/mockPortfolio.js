@@ -5,7 +5,6 @@
 export const MOCK_COTIZACIONES = {
   dolar_mep: 1400,
   dolar_ccl: 1453,
-  dolar_bna: 1050,
   dolar_oficial: 1050,
   riesgo_pais_pb: 500,
   ultima_actualizacion: new Date().toISOString(),

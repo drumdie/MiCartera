@@ -33,13 +33,19 @@ export function formatPctShort(pct) {
   return sign + pct.toFixed(2).replace('.', ',') + '%'
 }
 
-// Formatea un valor en ARS a la moneda activa del contexto (para totales)
+// ARS → USD a una tasa dada. Tasa inválida (≤0 / NaN) → '—' (evita "US$ ∞" al dividir por 0).
+export function usdAtRate(amountARS, rate) {
+  return rate > 0 ? formatUSD(amountARS / rate) : '—'
+}
+
+// Formatea un valor en ARS a la moneda activa del contexto (para totales).
+// BNA usa dolar_oficial (BCRA minorista / Banco Nación); dolar_bna está deprecado (var BCRA errónea).
 export function convertARS(amountARS, currency, cotizaciones) {
   switch (currency) {
     case 'ARS': return formatARS(amountARS)
-    case 'MEP': return formatUSD(amountARS / cotizaciones.dolar_mep)
-    case 'CCL': return formatUSD(amountARS / cotizaciones.dolar_ccl)
-    case 'BNA': return formatARS(amountARS)
+    case 'MEP': return usdAtRate(amountARS, cotizaciones.dolar_mep)
+    case 'CCL': return usdAtRate(amountARS, cotizaciones.dolar_ccl)
+    case 'BNA': return usdAtRate(amountARS, cotizaciones.dolar_oficial)
     default:    return formatARS(amountARS)
   }
 }
@@ -48,21 +54,22 @@ export function convertARS(amountARS, currency, cotizaciones) {
 export function convertARSPrice(amountARS, currency, cotizaciones) {
   if (amountARS == null || isNaN(amountARS)) return '—'
   switch (currency) {
-    case 'MEP': return formatUSD(amountARS / cotizaciones.dolar_mep)
-    case 'CCL': return formatUSD(amountARS / cotizaciones.dolar_ccl)
+    case 'MEP': return usdAtRate(amountARS, cotizaciones.dolar_mep)
+    case 'CCL': return usdAtRate(amountARS, cotizaciones.dolar_ccl)
+    case 'BNA': return usdAtRate(amountARS, cotizaciones.dolar_oficial)
     default:    return formatARSPrice(amountARS)
   }
 }
 
 // Label de moneda activa para columnas dinámicas
 export function currencyLabel(currency) {
-  return currency === 'MEP' ? 'MEP' : currency === 'CCL' ? 'CCL' : 'ARS'
+  return currency === 'MEP' ? 'MEP' : currency === 'CCL' ? 'CCL' : currency === 'BNA' ? 'BNA' : 'ARS'
 }
 
 // Retorna el rendimiento correcto según la moneda activa.
 // Devuelve null (→ '—') cuando la posición no tiene precio de compra calculado.
 export function getRendForCurrency(position, currency) {
-  if (currency === 'ARS' || currency === 'BNA') return position.rend_ars_pct ?? null
-  // Para MEP/CCL: preferir rend_usd_pct (CEDEARs/bonos); fallback a rend_ars_pct (acciones)
+  if (currency === 'ARS') return position.rend_ars_pct ?? null
+  // Para MEP/CCL/BNA (lentes en USD): preferir rend_usd_pct (CEDEARs/bonos); fallback a rend_ars_pct (acciones)
   return position.rend_usd_pct ?? position.rend_ars_pct ?? null
 }

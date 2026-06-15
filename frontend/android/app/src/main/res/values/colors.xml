@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Fondo de arranque/splash: igual al fondo base de la app (#080a0d), sin icono. -->
+    <color name="splashBackground">#080a0d</color>
+</resources>

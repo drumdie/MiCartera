@@ -6,6 +6,8 @@ const config: CapacitorConfig = {
   webDir: 'dist',
   android: {
     path: 'android',
+    // Fondo del WebView durante la carga → evita el flash blanco antes de que React renderice.
+    backgroundColor: '#080a0d',
   },
   plugins: {
     FirebaseAuthentication: {

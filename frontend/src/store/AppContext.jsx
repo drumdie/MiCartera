@@ -9,6 +9,7 @@ import { useAuth }      from '../hooks/useAuth'
 import { usePortfolio } from '../hooks/usePortfolio'
 import { apiPost } from '../services/apiClient'
 import { syncBrokerPortfolioToDevice } from '../services/portfolioSync'
+import { isDEKReady, onDEKChange } from '../services/userKey'
 
 export const AppContext = createContext(null)
 
@@ -134,13 +135,19 @@ export function AppProvider({ children }) {
     }
   }, [user, refreshPortfolio, refreshStress])
 
-  // Auto-sync al login: dispara una sola vez cuando el usuario se autentica.
-  // Si el mercado está cerrado o PPI no responde, deja los últimos datos conocidos.
+  // Auto-sync al login: una sola vez, PERO recién cuando la DEK está desbloqueada
+  // (después de la passphrase). Antes corría apenas había `user` → la DEK seguía bloqueada
+  // → el sync (cifrar/guardar el portfolio) fallaba con DEKLockedError y NO reintentaba.
   const _autoSyncDone = useRef(false)
   useEffect(() => {
-    if (!user || _autoSyncDone.current) return
-    _autoSyncDone.current = true
-    syncPPI()
+    if (!user) { _autoSyncDone.current = false; return }
+    const tryAutoSync = () => {
+      if (_autoSyncDone.current || !isDEKReady()) return
+      _autoSyncDone.current = true
+      syncPPI()
+    }
+    tryAutoSync()                    // si la DEK ya estaba lista
+    return onDEKChange(tryAutoSync)  // o en cuanto se desbloquee
   }, [user, syncPPI])
 
   return (

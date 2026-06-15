@@ -10,10 +10,11 @@ Los endpoints reales pueden variar. Ajustar según respuestas de la API.
 """
 from __future__ import annotations
 
-import httpx
 import logging
+import hashlib
+import httpx
+from dataclasses import dataclass
 from datetime import datetime, timezone, timedelta
-from typing import Optional
 
 _logger = logging.getLogger(__name__)
 
@@ -22,6 +23,39 @@ from app.core.config import settings
 
 class PPIError(Exception):
     pass
+
+
+@dataclass(frozen=True)
+class PPICredentials:
+    authorized_client: str
+    client_key: str
+    api_key: str
+    api_secret: str
+    account_number: str
+    base_url: str = settings.PPI_BASE_URL
+
+    @classmethod
+    def from_settings(cls) -> "PPICredentials":
+        return cls(
+            authorized_client=settings.PPI_AUTHORIZED_CLIENT,
+            client_key=settings.PPI_CLIENT_KEY,
+            api_key=settings.PPI_API_KEY,
+            api_secret=settings.PPI_API_SECRET,
+            account_number=settings.PPI_ACCOUNT_NUMBER,
+            base_url=settings.PPI_BASE_URL,
+        )
+
+    @property
+    def cache_key(self) -> str:
+        raw = "\0".join((
+            self.authorized_client,
+            self.client_key,
+            self.api_key,
+            self.api_secret,
+            self.account_number,
+            self.base_url,
+        ))
+        return hashlib.sha256(raw.encode("utf-8")).hexdigest()
 
 
 # ---------------------------------------------------------------------------
@@ -246,77 +280,90 @@ def _accumulate_renta(
 
 class PPIClient:
     def __init__(self) -> None:
-        self._access_token: Optional[str] = None
-        self._token_expiry: Optional[datetime] = None
+        self._token_cache: dict[str, tuple[str, datetime]] = {}
 
     # ------------------------------------------------------------------
     # Autenticación
     # ------------------------------------------------------------------
 
-    async def _login(self) -> None:
+    def _resolve_credentials(self, credentials: PPICredentials | None = None) -> PPICredentials:
+        return credentials or PPICredentials.from_settings()
+
+    async def _login(self, credentials: PPICredentials) -> str:
         async with httpx.AsyncClient(timeout=10) as client:
             resp = await client.post(
-                f"{settings.PPI_BASE_URL}/api/1.0/Account/LoginApi",
+                f"{credentials.base_url}/api/1.0/Account/LoginApi",
                 headers={
-                    "AuthorizedClient": settings.PPI_AUTHORIZED_CLIENT,
-                    "ClientKey":        settings.PPI_CLIENT_KEY,
-                    "ApiKey":           settings.PPI_API_KEY,
-                    "ApiSecret":        settings.PPI_API_SECRET,
+                    "AuthorizedClient": credentials.authorized_client,
+                    "ClientKey":        credentials.client_key,
+                    "ApiKey":           credentials.api_key,
+                    "ApiSecret":        credentials.api_secret,
                 },
             )
             if resp.status_code != 200:
-                _logger.error("PPI login falló: %s %s", resp.status_code, resp.text)
-                raise PPIError(f"PPI login falló (HTTP {resp.status_code})")
+                _logger.error("PPI login fallo: HTTP %s", resp.status_code)
+                raise PPIError(f"PPI login fallo (HTTP {resp.status_code})")
 
             data = resp.json()
-            self._access_token = data.get("accessToken") or data.get("AccessToken")
-            if not self._access_token:
-                _logger.error("PPI login: no accessToken en respuesta: %s", data)
+            access_token = data.get("accessToken") or data.get("AccessToken")
+            if not access_token:
+                _logger.error("PPI login: no accessToken en respuesta")
                 raise PPIError("PPI login: respuesta inesperada del servidor")
-            # expirationDate es ISO datetime; si no está, asumimos 1 hora
             exp = data.get("expirationDate") or data.get("ExpiresIn")
             try:
-                self._token_expiry = datetime.fromisoformat(exp.replace("Z", "+00:00")) - timedelta(seconds=60)
+                token_expiry = datetime.fromisoformat(exp.replace("Z", "+00:00")) - timedelta(seconds=60)
             except Exception:
-                self._token_expiry = datetime.now(timezone.utc) + timedelta(seconds=3540)
+                token_expiry = datetime.now(timezone.utc) + timedelta(seconds=3540)
+            self._token_cache[credentials.cache_key] = (access_token, token_expiry)
+            return access_token
 
-    async def _ensure_auth(self) -> str:
-        """Retorna un access token válido, renovándolo si expiró."""
-        if not self._access_token or datetime.now(timezone.utc) >= self._token_expiry:
-            await self._login()
-        return self._access_token
+    async def _ensure_auth(self, credentials: PPICredentials | None = None) -> str:
+        """Retorna un access token valido, renovandolo si expiro."""
+        resolved = self._resolve_credentials(credentials)
+        cached = self._token_cache.get(resolved.cache_key)
+        if cached:
+            token, expiry = cached
+            if datetime.now(timezone.utc) < expiry:
+                return token
+        return await self._login(resolved)
 
     # ------------------------------------------------------------------
     # Request base
     # ------------------------------------------------------------------
 
-    def _auth_headers(self, token: str) -> dict:
+    def _auth_headers(self, token: str, credentials: PPICredentials) -> dict:
         return {
             "Authorization":   f"Bearer {token}",
-            "AuthorizedClient": settings.PPI_AUTHORIZED_CLIENT,
-            "ClientKey":        settings.PPI_CLIENT_KEY,
-            "ApiKey":           settings.PPI_API_KEY,
-            "ApiSecret":        settings.PPI_API_SECRET,
+            "AuthorizedClient": credentials.authorized_client,
+            "ClientKey":        credentials.client_key,
+            "ApiKey":           credentials.api_key,
+            "ApiSecret":        credentials.api_secret,
         }
 
-    async def _get(self, path: str, params: dict | None = None) -> dict | list:
-        token = await self._ensure_auth()
+    async def _get(
+        self,
+        path: str,
+        params: dict | None = None,
+        credentials: PPICredentials | None = None,
+    ) -> dict | list:
+        resolved = self._resolve_credentials(credentials)
+        token = await self._ensure_auth(resolved)
         async with httpx.AsyncClient(timeout=15) as client:
             resp = await client.get(
-                f"{settings.PPI_BASE_URL}{path}",
+                f"{resolved.base_url}{path}",
                 params=params,
-                headers=self._auth_headers(token),
+                headers=self._auth_headers(token, resolved),
             )
             if resp.status_code == 401:
-                self._access_token = None
-                token = await self._ensure_auth()
+                self._token_cache.pop(resolved.cache_key, None)
+                token = await self._ensure_auth(resolved)
                 resp = await client.get(
-                    f"{settings.PPI_BASE_URL}{path}",
+                    f"{resolved.base_url}{path}",
                     params=params,
-                    headers=self._auth_headers(token),
+                    headers=self._auth_headers(token, resolved),
                 )
             if not resp.is_success:
-                _logger.error("PPI GET %s → %s: %s", path, resp.status_code, resp.text)
+                _logger.error("PPI GET %s -> HTTP %s", path, resp.status_code)
                 raise PPIError(f"PPI GET {path} → HTTP {resp.status_code}")
             return resp.json()
 
@@ -324,7 +371,7 @@ class PPIClient:
     # Portfolio
     # ------------------------------------------------------------------
 
-    async def get_account_positions(self) -> list:
+    async def get_account_positions(self, credentials: PPICredentials | None = None) -> list:
         """
         Retorna las posiciones actuales de la cuenta.
         PPI devuelve una lista de instrumentos con cantidad, precio y valor de mercado.
@@ -344,9 +391,11 @@ class PPIClient:
           "Currency": "ARS"
         }
         """
+        resolved = self._resolve_credentials(credentials)
         data = await self._get(
             "/api/1.0/Account/BalancesAndPositions",
-            params={"accountNumber": settings.PPI_ACCOUNT_NUMBER},
+            params={"accountNumber": resolved.account_number},
+            credentials=resolved,
         )
         result = []
 
@@ -378,25 +427,33 @@ class PPIClient:
     # Movimientos y rendimientos
     # ------------------------------------------------------------------
 
-    async def get_movements(self, date_from: str, date_to: str) -> list:
+    async def get_movements(
+        self,
+        date_from: str,
+        date_to: str,
+        credentials: PPICredentials | None = None,
+    ) -> list:
         """
         Trae movimientos de la cuenta en un rango de fechas.
         date_from / date_to: strings "YYYY-MM-DD"
         Cada movimiento incluye: ticker, quantity, price, currency, description, settlementDate
         """
+        resolved = self._resolve_credentials(credentials)
         data = await self._get(
             "/api/1.0/Account/Movements",
             params={
-                "accountNumber": settings.PPI_ACCOUNT_NUMBER,
+                "accountNumber": resolved.account_number,
                 "dateFrom":      date_from,
                 "dateTo":        date_to,
             },
+            credentials=resolved,
         )
         return data if isinstance(data, list) else data.get("movements", data.get("data", []))
 
     async def compute_avg_costs(
         self,
         cached_state: dict | None = None,
+        credentials: PPICredentials | None = None,
     ) -> tuple[dict[str, float], dict]:
         """
         Calcula precio promedio ponderado de compra con soporte incremental.
@@ -442,6 +499,7 @@ class PPIClient:
                 chunk = await self.get_movements(
                     chunk_start.strftime("%Y-%m-%d"),
                     chunk_end.strftime("%Y-%m-%d"),
+                    credentials=credentials,
                 )
                 all_movements.extend(chunk)
             except Exception as exc:
@@ -637,9 +695,9 @@ class PPIClient:
 
         return avg_costs, avg_costs_usd, new_state
 
-    async def get_average_costs(self) -> dict:
+    async def get_average_costs(self, credentials: PPICredentials | None = None) -> dict:
         """Versión legacy usada por los endpoints de debug. Delega a compute_avg_costs."""
-        avg_costs, _, _ = await self.compute_avg_costs(cached_state=None)
+        avg_costs, _, _ = await self.compute_avg_costs(cached_state=None, credentials=credentials)
         return avg_costs
 
     # ------------------------------------------------------------------
@@ -651,8 +709,9 @@ class PPIClient:
         ticker: str,
         instrument_type: str = "ACCIONES",
         settlement: str = "A-48HS",
+        credentials: PPICredentials | None = None,
     ) -> float:
-        data = await self.get_market_data(ticker, instrument_type, settlement)
+        data = await self.get_market_data(ticker, instrument_type, settlement, credentials=credentials)
         return float(data.get("price") or data.get("last") or data.get("Price") or 0)
 
     async def get_market_data(
@@ -660,6 +719,7 @@ class PPIClient:
         ticker: str,
         instrument_type: str,
         settlement: str,
+        credentials: PPICredentials | None = None,
     ) -> dict:
         """
         Retorna datos completos de mercado para un instrumento.
@@ -673,31 +733,32 @@ class PPIClient:
                     "Settlement": settlement,
                     "Ticker":     ticker,
                 },
+                credentials=credentials,
             )
             return data if isinstance(data, dict) else {}
         except Exception:
             return {}
 
-    async def get_dolar_mep(self) -> float:
+    async def get_dolar_mep(self, credentials: PPICredentials | None = None) -> float:
         """
         Dólar MEP ≈ AL30 en ARS / AL30D en USD (liquidación A-24HS).
         """
         try:
-            price_ars = await self.get_market_price("AL30",  "BONOS", "A-24HS")
-            price_usd = await self.get_market_price("AL30D", "BONOS", "A-24HS")
+            price_ars = await self.get_market_price("AL30",  "BONOS", "A-24HS", credentials=credentials)
+            price_usd = await self.get_market_price("AL30D", "BONOS", "A-24HS", credentials=credentials)
             if price_usd > 0:
                 return round(price_ars / price_usd, 2)
         except Exception as exc:
             print(f"[PPI] Error calculando MEP: {exc}")
         return 0.0
 
-    async def get_dolar_ccl(self) -> float:
+    async def get_dolar_ccl(self, credentials: PPICredentials | None = None) -> float:
         """
         Dólar CCL ≈ GD30 en ARS / GD30D en USD (liquidación A-48HS).
         """
         try:
-            price_ars = await self.get_market_price("GD30",  "BONOS", "A-48HS")
-            price_usd = await self.get_market_price("GD30D", "BONOS", "A-48HS")
+            price_ars = await self.get_market_price("GD30",  "BONOS", "A-48HS", credentials=credentials)
+            price_usd = await self.get_market_price("GD30D", "BONOS", "A-48HS", credentials=credentials)
             if price_usd > 0:
                 return round(price_ars / price_usd, 2)
         except Exception as exc:

@@ -28,6 +28,26 @@ export class DEKLockedError extends Error {
 // --- DEK cacheada en memoria por sesión (no se persiste en claro) -----------
 let _dekMaterial = null   // Uint8Array(32) | null
 
+// Suscriptores que reaccionan a cambios de disponibilidad de la DEK (desbloqueo/logout).
+// Lo usa AppContext para disparar el auto-sync recién cuando la DEK está lista (post-passphrase),
+// no apenas hay user (que es antes del gate, con la DEK bloqueada).
+const _dekListeners = new Set()
+
+export function isDEKReady() {
+  return _dekMaterial !== null
+}
+
+export function onDEKChange(cb) {
+  _dekListeners.add(cb)
+  return () => _dekListeners.delete(cb)
+}
+
+function _notifyDEK() {
+  for (const cb of _dekListeners) {
+    try { cb(isDEKReady()) } catch { /* un listener no debe romper a los demás */ }
+  }
+}
+
 export function getCachedDEKMaterial() {
   return _dekMaterial
 }
@@ -35,10 +55,12 @@ export function getCachedDEKMaterial() {
 export function clearDEK() {
   if (_dekMaterial) _dekMaterial.fill(0)   // best-effort: borrar de memoria
   _dekMaterial = null
+  _notifyDEK()
 }
 
 function cacheDEK(material) {
   _dekMaterial = material
+  _notifyDEK()
 }
 
 // --- helpers base64 / bytes -------------------------------------------------

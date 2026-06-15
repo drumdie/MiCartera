@@ -30,7 +30,6 @@ _PPI_API_SECRET        = os.environ.get("PPI_API_SECRET", "")
 
 # BCRA API (pública, sin credenciales)
 _BCRA_BASE = "https://api.bcra.gob.ar/estadisticas/v2.0"
-_VAR_DOLAR_BNA     = 1
 _VAR_DOLAR_OFICIAL = 4
 _VAR_RIESGO_PAIS   = 5
 
@@ -324,7 +323,6 @@ def polling_cotizaciones(event: scheduler_fn.ScheduledEvent) -> None:
 
     mep     = _calc_dolar_mep()
     ccl     = _calc_dolar_ccl()
-    bna     = _bcra_variable(_VAR_DOLAR_BNA)
     oficial = _bcra_variable(_VAR_DOLAR_OFICIAL)
     riesgo  = _fetch_riesgo_pais()
 
@@ -334,7 +332,6 @@ def polling_cotizaciones(event: scheduler_fn.ScheduledEvent) -> None:
     data = {
         "dolar_mep":            _pick_float(mep,    "dolar_mep"),
         "dolar_ccl":            _pick_float(ccl,    "dolar_ccl"),
-        "dolar_bna":            _pick_float(bna,    "dolar_bna"),
         "dolar_oficial":        _pick_float(oficial, "dolar_oficial"),
         "riesgo_pais_pb":       _pick_int(riesgo,   "riesgo_pais_pb"),
         "ultima_actualizacion": datetime.now(timezone.utc).isoformat(),
@@ -355,7 +352,7 @@ def polling_cotizaciones(event: scheduler_fn.ScheduledEvent) -> None:
     ref.set(data)
     print(
         f"[polling] MEP={data['dolar_mep']} CCL={data['dolar_ccl']} "
-        f"BNA={data['dolar_bna']} RP={data['riesgo_pais_pb']}pb "
+        f"OFICIAL={data['dolar_oficial']} RP={data['riesgo_pais_pb']}pb "
         f"RP_min={data.get('riesgo_pais_min')} desde={data.get('riesgo_pais_min_desde')}"
     )
 

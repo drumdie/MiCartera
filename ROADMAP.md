@@ -31,6 +31,66 @@ credenciales de servidor (llamadas a PPI) y nunca ve plaintext.
 
 ---
 
+## ⭐ Estado actual — checkpoint 2026-06-14
+
+### ✅ Hecho (esta sesión + Codex)
+
+**Seguridad / hardening**
+- ✅ **P0** completo (fail-closed `prices/refresh`, desacople `syncPPI`, log en `debug-movements`).
+- ✅ **Restricción API key de Android** en Google Cloud (5 APIs: Identity Toolkit, Token Service,
+  Firebase Installations, Cloud Firestore, Firebase App Check). Verificada en emulador.
+- ✅ **App Check web** scaffolded (reCAPTCHA v3 env-gated en `firebase.js`) — falta registro en
+  Console + site key + enforcement. Falta App Check Android (Play Integrity) y restringir la
+  Browser key.
+- ✅ `google-services.json` gitignored.
+
+**P1 — Identidad + clave por usuario**
+- ✅ **P1.2** envelope encryption: passphrase aparte + recovery code (PBKDF2-SHA256 + AES-GCM),
+  keywrap en `/users/{uid}/keywrap`, seam `getUserDEKMaterial`, gate en `AuthGate`. Validado E2E.
+- ✅ **P1.4** contrato de uso de datos (`consentimiento` versionado en `/users/{uid}`).
+- ✅ **P1.3** onboarding broker (5 creds PPI cifradas con la DEK en `/users/{uid}/broker/data`, omitible).
+- ✅ **P1.5 (Codex)** backend usa creds PPI **por usuario**: `PPICredentials` + `SyncSourceRequest`;
+  el dispositivo manda `broker_credentials` en el body de `sync-source`; `ppi_client` acepta creds
+  por llamada con **fallback a las globales**. ⚠️ Falta testear con un 2º usuario.
+
+**P3 — Android (Capacitor)**
+- ✅ **apk funcionando**: arranca, Login con **Google nativo** (mismo uid que web), gate de passphrase.
+  Verificado en emulador y en **teléfono real** (entró con passphrase).
+- ✅ Crash de arranque resuelto: `rgcfaIncludeGoogle=true` en `variables.gradle` (empaqueta
+  `play-services-auth` → `GoogleSignIn`).
+- ✅ Fix script `android:apk` (`gradlew` → `.\gradlew.bat`).
+- ✅ Refactor DRY del sync: helper `_build_user_portfolio` compartido por `/sync` y `/sync-source`.
+- ✅ Cache offline endurecido: `allSettled` por-doc, cifrado at-rest del cache local (Fernet), purga en logout.
+- 🔧 Ícono apk: Codex agregó `@capacitor/assets` (Task A) — verificar si completó la generación.
+
+**Backend en Cloud Run** ([docs/deploy-cloud-run.md](docs/deploy-cloud-run.md))
+- ✅ Deployado: servicio `micartera-backend`, región `southamerica-east1`.
+  URL: `https://micartera-backend-486793579128.southamerica-east1.run.app` (health OK).
+- ✅ `backend/Dockerfile` + `.dockerignore`. Redeployado (revisión `00002`) con el fix device-encrypt.
+- ⏳ **Env vars SIN cargar** (`ALLOWED_ORIGINS` + 5 PPI + `DATA_ENCRYPTION_KEY`) → **acción del usuario** en la Console.
+
+**Fixes del fetch (device-encrypt)**
+- ✅ Auto-sync **espera la DEK** (no corre antes de la passphrase): `userKey.js` (`onDEKChange`/`isDEKReady`) + `AppContext.jsx`.
+- ✅ Backend **tolera docs device-encrypted** (no tira 500): `_build_user_portfolio` + `read_user_portfolio`.
+
+### ⏳ Pendiente inmediato
+1. **Usuario:** cargar env vars en Cloud Run (Console) → probar fetch en el **apk**.
+2. **Usuario:** reiniciar backend local → probar fetch **web** (debería andar con el fix de hoy).
+3. Verificar **P1.5** end-to-end con un 2º usuario.
+4. **App Check**: registro en Console (web reCAPTCHA + Android Play Integrity) + enforcement
+   (monitor primero). Restringir también la **Browser key** (web).
+5. **UX (Fable, hilo nuevo)** — ver memoria `ux-vision-perfil-inversion`: el "tab Contratos" pasa a
+   ser **"Perfil de Inversión"** dentro de una pantalla **Perfil** (nombre, email, cambiar passphrase,
+   toggle biometría). KPI cards con **drill-down** (ej. "Mayor posición" → top 5). Reshapea P2 y P4.
+
+### Commits de la sesión (rama `feat/tactico-fundamental`, **sin pushear**)
+`049ff21` cifrado por usuario (P1.2/1.3/1.4) + P0 + refactor sync · `34b0328` Google nativo + crash fix ·
+`b3f17ad` gitignore google-services · `b015311` App Check web scaffold · `dc823ce` Dockerfile + guía Cloud Run.
+**Sin commitear:** P1.5 de Codex (`portfolioSync.js`, `portfolio.py`, `ppi_client.py`), fixes del fetch de hoy
+(`userKey.js`, `AppContext.jsx`, `portfolio.py`), `@capacitor/assets`. → conviene commitear antes de seguir.
+
+---
+
 # Bloques por prioridad
 
 ## P0 · Hardening de seguridad pre-exposición
@@ -60,8 +120,9 @@ credenciales de servidor (llamadas a PPI) y nunca ve plaintext.
   `getUserDEKMaterial`). ✅ **P1.4** (firma de contrato de uso de datos → `consentimiento` en
   `/users/{uid}`). ✅ **P1.3** (onboarding: 5 creds PPI cifradas con la DEK en
   `/users/{uid}/broker/data`, omitible; `onboarding_completo`). Gate completo en `AuthGate`:
-  passphrase → contrato → broker → Dashboard. P1.1 parcial (email/password nativo por Codex).
-  **Pendientes: P1.1 (web), P1.5 (backend usa las creds por usuario, hoy aún lee `.env`).**
+  passphrase → contrato → broker → Dashboard. ✅ **P1.5 (Codex, 2026-06-14)**: backend usa creds PPI
+  por usuario (`PPICredentials`, `broker_credentials` en el body, fallback a globales) — falta testear
+  con 2º usuario. **Pendiente: P1.1 web** (sigue Google popup; nativo ya tiene email/password + Google).
 - **Por qué esta prioridad:** es el cimiento de "producto multi-usuario" y **prerrequisito
   de la Opción B** (la clave por usuario que descifra en el dispositivo nace acá). Sin esto,
   Android Opción B no tiene de dónde sacar la clave.
@@ -104,7 +165,9 @@ credenciales de servidor (llamadas a PPI) y nunca ve plaintext.
 ## P2 · UI del Contrato de Inversión (módulo táctico)
 
 - **Objetivo:** construir la capa visual del Contrato de Inversión sobre la lógica ya existente.
-- **Estado:** 🔜 **listo para arrancar** — diseño cerrado y lógica no-visual ya commiteada.
+- **Estado:** 🔜 listo para arrancar (con Fable, hilo nuevo). **Reshape (2026-06-14):** ya NO es un
+  "tab Contratos" → pasa a ser el botón **"Perfil de Inversión"** dentro de la pantalla **Perfil**
+  (ver memoria `ux-vision-perfil-inversion` y P4). La lógica no-visual sigue lista y commiteada.
 - **Por qué esta prioridad:** es el principal valor agregado del producto y está **desbloqueado**
   (el bug rend ONs/FCI que lo bloqueaba ya se resolvió en `8705834`/`c170c02`). No depende de P0/P1.
 - **Owner sugerido:** Fable (Claude Code CLI) · **Paralelizable:** sí, totalmente independiente.
@@ -129,7 +192,10 @@ credenciales de servidor (llamadas a PPI) y nunca ve plaintext.
 
 - **Objetivo:** correr MiCartera como `.apk` nativo en Android, con datos cifrados leídos directo
   de Firestore, **descifrados en el dispositivo** con la clave del usuario, y cacheados en **SQLite local**.
-- **Estado:** 🔜 (scaffolding posible ya; la parte cripto real depende de P1.2)
+- **Estado:** 🔧 mayormente hecho (2026-06-14). ✅ apk nativo funcionando (Google login + gate +
+  fetch device-encrypt), ✅ crash de arranque resuelto, ✅ backend deployado en Cloud Run, ✅ cifrado
+  en dispositivo + cache offline. **Pendiente:** cargar env vars de Cloud Run (usuario), capa SQLite
+  offline-first robusta (P3.C, hoy hay cache básico), ícono (Codex), firma/Play Store (P3.E).
 - **Por qué esta prioridad:** es el objetivo de "usarlo en el teléfono de verdad". Se hace después
   de tener identidad/clave por usuario (P1), pero el shell y el plumbing arrancan en paralelo.
 - **Owner sugerido:** Codex/antigravity (capa SQLite+sync) · **Paralelizable:** sí; el shell
@@ -159,16 +225,20 @@ credenciales de servidor (llamadas a PPI) y nunca ve plaintext.
 
 ## P4 · Refresh de UX/UI
 
-- **Objetivo:** actualizar la experiencia visual y de interacción de la app.
-- **Estado:** 🔜 (a definir alcance)
-- **Por qué esta prioridad:** alto impacto percibido; conviene hacerlo junto con/después de la
-  UI del Contrato (P2) para no rehacer estilos dos veces.
-- **Owner sugerido:** Fable · **Paralelizable:** sí, pero coordinar con P2 para estilos compartidos.
+- **Objetivo:** actualizar la experiencia visual y de interacción de la app + nueva arquitectura de
+  información (ver memoria `ux-vision-perfil-inversion`).
+- **Estado:** 🔜 listo para arrancar en **hilo nuevo con Fable** (prompt ya armado en la sesión;
+  el usuario va a adjuntar imágenes de referencia). Incorpora **P2** (Contrato → "Perfil de Inversión").
+- **Por qué esta prioridad:** alto impacto percibido; engloba la UI del Contrato (P2) y nuevas pantallas.
+- **Owner sugerido:** Fable (hilo nuevo, en la PC del usuario) · **Paralelizable:** sí.
 - **Specs:**
-  - Referencia visual/UX: [cartera_app_v5b.html](cartera_app_v5b.html) (no copiar datos, sí estética).
-  - Revisar jerarquía de info en Dashboard, consistencia de KPI cards, badges tácticos, modo oscuro,
-    responsive mobile (clave para Android).
-  - Definir alcance concreto antes de arrancar (¿restyle total o pulido por secciones?).
+  - Referencia visual/UX: imágenes de apps que el usuario adjunte + [cartera_app_v5b.html](cartera_app_v5b.html).
+    Identidad: dark + 'Syne'/'DM Mono' + acento verde. Mobile-first (corre como apk).
+  - **Nueva IA:** pantalla **Perfil** (botón con nombre del user) con nombre/email, **cambiar passphrase**
+    (re-wrap de la DEK en `userKey.js`, feature nueva), **toggle biometría** (UI + seam; nativo aparte =
+    Android Keystore, pendiente de P1.2), y **"Perfil de Inversión"** (contrato por tickers, P2).
+  - **KPI cards con drill-down:** ej. "Mayor posición" → top 5 posiciones + % cartera + datos.
+  - Estados vacío/loading/error explícitos (hoy "failed to fetch" y stress mock se ven como rotos).
 
 ---
 
