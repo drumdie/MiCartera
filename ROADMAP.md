@@ -91,7 +91,70 @@ credenciales de servidor (llamadas a PPI) y nunca ve plaintext.
 
 ---
 
+## 🔄 Actualización de sesión — 2026-06-20
+
+**Lo que se descubrió diagnosticando el bug de sync (y por qué cambia el rumbo):**
+- El **frontend descifra las credenciales del broker y las manda en claro** al backend en el body de `sync-source`. Son **visibles en F12 → Network** (y expuestas a XSS/extensiones). El usuario lo detectó por casualidad → **inaceptable para una app cuyo objetivo es la seguridad.**
+- **Decisión tomada (usuario + Claude):** migrar a **credenciales backend-managed con envelope+passphrase** (ver **SEC-1** abajo). El frontend deja de ver/descifrar credenciales.
+
+**Diagnóstico del bug de sync (cerrado en lo funcional, pendiente la causa raíz):**
+- El backend deployado **funciona** con creds válidas (probado: token real + creds del `.env` → 200 + 33 posiciones).
+- Las creds que **manda el dispositivo** (las cifradas en `/users/{uid}/broker/data`) **PPI las rechaza con login HTTP 400** ("Credenciales invalidas"), mientras que las del `.env` andan. No se identificó la diferencia exacta (no se pueden descifrar las del device sin la passphrase). El usuario afirma que son iguales letra por letra.
+- **Workaround temporal aplicado (commit `34352fd`):** el backend cae a las creds del `.env` si las del device fallan. ⚠️ Es un atajo **single-owner de dev** — NO sirve multi-user. **A revertir con SEC-1.**
+- **Causa raíz pendiente:** comparar (A) lo que manda el device en F12 vs (B) `.env`, campo por campo. Con SEC-1 se vuelve casi moot (el backend maneja las creds), pero conviene no arrastrar creds corruptas.
+
+**Otros hallazgos de la sesión:**
+- **Cloud Run** NO tiene env vars `PPI_*` en ninguna revisión → el **APK no sincroniza** (solo el backend local, gracias al fallback). Se redefine con SEC-1.
+- **MEP/RP desactualizados** (muestra 1.450, real 1.477): el sync de cartera **NO** actualiza `/market/cotizaciones` — eso lo hace el **scheduler de Cloud Functions**, que no está corriendo/deployado. Tema aparte.
+- **UX pendiente — no mostrar datos no sincronizados:** hoy se muestran valores viejos (Total valorizado, MEP, RP, stress test, mayor posición, liquidez, G/P USD) y datos de **Fundamentales, Catalizadores, Gráficos, análisis táctico** aunque no haya un sync fresco. Debería **ocultarse / placeholder** hasta el primer sync, igual que los tickers (que sí se ocultan bien). A futuro: **pantalla de Loading animada** (el usuario prefiere dejarla para después, ahora ayuda verlo sin animación). Los guards `hasPositions` ya cubren parte (Fund/Catal/Gráficos cuando no hay posiciones), falta el caso "hay datos viejos pero sin sync fresco".
+- **`micartera-ar.web.app` = "Site Not Found"** → la web nunca se deployó a Hosting. Solo existe localhost.
+- **Auth web**: `auth/unauthorized-domain` si se entra por IP `192.x` (no autorizada). Dominios OK: `localhost`, `micartera-ar.firebaseapp.com`, `micartera-ar.web.app`.
+- **.gitignore**: agregados `*.apk`, `*.aab`, `*.jks`, `*.keystore`, `google-services.json`. Verificado: nada sensible trackeado ni en historial.
+
+---
+
 # Bloques por prioridad
+
+## 🔐 SEC-1 · Migración a credenciales backend-managed (envelope + passphrase) — **NUEVA, prioridad alta**
+
+- **Objetivo:** que el **frontend nunca vea ni descifre** las credenciales del broker. El **backend** las descifra, llama al broker y devuelve **solo datos procesados**. Modelo "tipo banco".
+- **Motivación:** ver actualización 2026-06-20. El modelo device-encrypt actual expone las creds en claro en el cliente (F12/XSS). Reemplaza al esquema "el device manda las creds" de **P1.5**.
+- **Estado:** 📐 diseño acordado, sin implementar. Checkpoint previo: commit `34352fd`.
+
+### Arquitectura objetivo
+```
+Frontend (web/APK)            Backend (Cloud Run)                 Broker (PPI)
+─────────────────            ───────────────────                 ────────────
+- UI, login (Firebase Auth)  - /unlock  (passphrase → DEK RAM)   ← llama el backend
+- pide /sync, /holdings...    - /sync /holdings /transactions
+- muestra datos procesados    - /analysis
+- NUNCA ve credenciales       - valida Firebase Auth + App Check
+                              - rate limit, logs SIN secretos
+                              - descifra creds y llama al broker
+                              - NO persiste passphrase/DEK/creds en claro
+Storage: creds por-usuario, cifradas con envelope (DEK envuelta bajo passphrase).
+```
+
+### Decisión de diseño clave (ajuste sobre la propuesta de ChatGPT)
+- **Envelope con passphrase, NO KMS/IAM puro.** Con KMS puro el backend descifra **siempre sin passphrase** → un compromiso del backend expone TODAS las creds, y la passphrase queda cosmética. Con **envelope+passphrase**, un leak de la base en reposo **no alcanza** (falta la passphrase). Es la opción verdaderamente "bancaria".
+- **Flujo de unlock:** passphrase → backend desenvuelve la DEK → la cachea en **RAM con TTL corto (~5 min)** → descifra creds on-demand → al expirar, re-bloquea. Nunca se guarda ni se loguea passphrase/DEK/creds.
+- **Caveat honesto:** el backend **sí** ve creds+passphrase un instante (en RAM). Se confía en el backend (controlado: App Check, IAM, logs sin secretos). La ganancia real: **sacar al frontend** (lo expuesto) del círculo de confianza.
+
+### Fases
+- **F0** — doc de arquitectura (esto) + checkpoint. ✅
+- **F1** — Backend: endpoint `/unlock` (passphrase → DEK en RAM con TTL) + mover el descifrado de creds 100% al backend. El keywrap (DEK envuelta bajo passphrase) pasa a desenvolverse server-side.
+- **F2** — Endpoints de datos procesados (`/sync`, `/holdings`, `/transactions`, `/analysis`); el frontend deja de mandar `broker_credentials`.
+- **F3** — Frontend: quitar todo descifrado de creds (`fernet`/DEK del lado cliente para broker); **revertir el fallback `.env`** del backend (band-aid de hoy).
+- **F4** — Endurecimiento: App Check enforcement (web reCAPTCHA + Android Play Integrity), rate limit, logs sin secretos, rotación de creds, auditoría, IAM mínimo.
+
+### Decisiones a confirmar antes de F1
+- ¿Dónde cachea el backend la DEK por usuario (memoria del proceso vs store con TTL tipo Redis)? Para Cloud Run (multi-instancia) la memoria del proceso no se comparte → definir.
+- Migración de las creds existentes de `/users/{uid}/broker/data` (ya cifradas con la DEK del usuario) al nuevo flujo.
+- Cómo se ingresan/editan las creds en el nuevo modelo (hoy: pantalla v11, temporal; final: write-only + gate por mail).
+
+---
+
+# Bloques por prioridad (previos)
 
 ## P0 · Hardening de seguridad pre-exposición
 
