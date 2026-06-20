@@ -1,6 +1,7 @@
 @import url('https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=DM+Mono:ital,wght@0,300;0,400;0,500&family=Syne:wght@600;700;800&display=swap');
 
 :root {
+  /* ── Superficies / texto (identidad: dark) ── */
   --bg: #080a0d;
   --surface: #0e1117;
   --surface2: #141920;
@@ -12,6 +13,8 @@
   --accent3: #4a9eff;
   --red: #ff4d6d;
   --purple: #c084fc;
+  --pink: #f472b6;
+  --orange: #fb923c;
   --text: #dde4ed;
   --muted: #4a5a6e;
   --muted2: #6a7e94;
@@ -19,4 +22,41 @@
   --hold: #4a9eff;
   --sell: #ff4d6d;
   --warn: #f7b731;
+
+  /* ── Alias para resolver fallbacks dispersos en JS (deuda saldada) ── */
+  --green: var(--accent);
+  --text-muted: var(--muted2);
+
+  /* ── Capas alpha (matan los rgba(...) literales repartidos por el CSS) ── */
+  --accent-glow: rgba(0, 229, 160, .05);
+  --accent-soft: rgba(0, 229, 160, .10);
+  --accent-line: rgba(0, 229, 160, .22);
+  --red-soft:    rgba(255, 77, 109, .10);
+  --red-line:    rgba(255, 77, 109, .20);
+  --blue-soft:   rgba(74, 158, 255, .10);
+  --blue-line:   rgba(74, 158, 255, .20);
+  --amber-soft:  rgba(247, 183, 49, .10);
+  --amber-line:  rgba(247, 183, 49, .20);
+  --purple-soft: rgba(192, 132, 252, .10);
+  --purple-line: rgba(192, 132, 252, .20);
+
+  /* ── Escala de spacing ── */
+  --s4: 4px;  --s8: 8px;   --s12: 12px; --s16: 16px;
+  --s20: 20px; --s24: 24px; --s32: 32px;
+
+  /* ── Radios ── */
+  --r-sm: 10px; --r-md: 12px; --r-lg: 16px; --r-xl: 20px; --r-pill: 999px;
+
+  /* ── Layout mobile-first (app de teléfono, no web) ── */
+  --app-max: 480px;
+  --tap: 44px;            /* touch target mínimo */
+  --nav-h: 86px;          /* alto reservado para la bottom-nav */
+
+  /* ── Familias tipográficas ── */
+  --font-head: 'Syne', sans-serif;
+  --font-mono: 'DM Mono', monospace;
+  --font-num:  'IBM Plex Mono', monospace;
+
+  /* ── Curva de transición común ── */
+  --ease: cubic-bezier(.4, 0, .2, 1);
 }

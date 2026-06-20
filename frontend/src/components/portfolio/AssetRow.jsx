@@ -4,7 +4,7 @@ import { formatARS, formatARSPrice, formatUSD, formatPctShort } from '../../util
 import PrivacyMask from '../ui/PrivacyMask'
 import TacticalBadge, { tacticalBarClass } from './TacticalBadge'
 
-export default function AssetRow({ position, expanded, onToggle, isCedear, isBono, isON, isFCI, isStale = false }) {
+export default function AssetRow({ position, expanded, onToggle, isCedear, isBono, isON, isFCI, isStale = false, syncDate = null }) {
   const { activeCurrency, getRend, convert, convertPrice, curLabel } = useCurrency()
   const barCls    = tacticalBarClass(position.accion_tactica)
   const isMEPmode = activeCurrency === 'MEP' || activeCurrency === 'CCL'
@@ -29,8 +29,12 @@ export default function AssetRow({ position, expanded, onToggle, isCedear, isBon
     // Fin de semana o antes de apertura (11:00 hs BA): sin rueda hoy → 0%
     if (dow === 0 || dow === 6 || hour < 11) return 0
 
-    // Día hábil ≥ 11:00: mercado abierto → intradiario actual; cerrado → último de la rueda
+    // Día hábil ≥ 11:00: mercado abierto → intradiario actual
     if (!isStale) return position.rend_dia_pct ?? null
+    // Mercado cerrado: solo mostrar el último intradiario si el sync fue HOY.
+    // Si el sync fue de otro día (ej: domingo), los datos son de la sesión anterior → '—'.
+    const todayStr = bue.toISOString().substring(0, 10)
+    if (syncDate !== todayStr) return null
     return position.rend_dia_pct ?? 0
   })()
   const isDiaPos = rendDia == null || rendDia >= 0

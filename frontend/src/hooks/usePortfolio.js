@@ -10,10 +10,20 @@ import {
   pullPortfolioFromFirestore,
   readCachedPortfolio,
   subscribeEncryptedPortfolio,
+  getLastReadDiag,
 } from '../services/portfolioSync'
+import { readDeviceHistory, importLegacyHistoryOnce } from '../services/portfolioHistory'
 
 const EMPTY_CAT  = { subtotal_ars: 0, pct_cartera: 0, posiciones: [] }
 const EMPTY_LIQ  = { subtotal_ars: 0, pct_cartera: 0, usd_total_aprox: 0, detalle: [] }
+
+// Cuenta posiciones + items de liquidez en un portfolio raw (para el diagnóstico de lectura).
+function countPositions(p) {
+  if (!p) return 0
+  const cats = ['acciones_ar', 'cedears', 'bonos', 'ons', 'fci']
+  const n = cats.reduce((s, c) => s + (p[c]?.posiciones?.length ?? 0), 0)
+  return n + (p.liquidez?.detalle?.length ?? 0)
+}
 
 function buildCategory(raw) {
   const posiciones   = raw?.posiciones ?? []
@@ -141,7 +151,7 @@ function withTipo(escenario) {
 
 // Agrupación temática de tickers para el tab Fundamentales (referencia: cartera_app_v5b.html).
 // Los tickers que no estén acá caen al grupo por sector de yfinance / categoría.
-const _GRUPO_TEMATICO = {
+export const _GRUPO_TEMATICO = {
   YPFD: 'Energía · Upstream',           VIST:  'Energía · Upstream',
   TGSU2: 'Energía · Gas y Transmisión', TGNO4: 'Energía · Gas y Transmisión',
   TRAN: 'Energía · Gas y Transmisión',  PAMP:  'Energía · Gas y Transmisión',
@@ -153,7 +163,7 @@ const _GRUPO_TEMATICO = {
 }
 
 // Orden en que se muestran los grupos temáticos (los no listados van después, alfabéticos).
-const _GRUPO_ORDEN = [
+export const _GRUPO_ORDEN = [
   'Energía · Upstream',
   'Energía · Gas y Transmisión',
   'Materiales',
@@ -169,6 +179,7 @@ export function usePortfolio(uid) {
   const [portfolioHistory,  setPortfolioHistory]  = useState({})
   const [rawFundamentals,   setRawFundamentals]   = useState({})
   const [loading,           setLoading]           = useState(true)
+  const [readDiag,          setReadDiag]          = useState(null)
 
   const fetchPortfolio = useCallback(async () => {
     if (!uid) return
@@ -177,6 +188,7 @@ export function usePortfolio(uid) {
       setRawPortfolio(cached)
       const data = await pullPortfolioFromFirestore(uid)
       setRawPortfolio(data)
+      setReadDiag({ ...getLastReadDiag(), source: 'firestore-dek', positions: countPositions(data) })
       setLoading(false)
     } catch {
       try {
@@ -185,6 +197,9 @@ export function usePortfolio(uid) {
         // IMPACT: Android/offline usa el camino nuevo; web/dev no queda bloqueado durante la transicion.
         const data = await apiGet('/api/portfolio')
         setRawPortfolio(data)
+        setReadDiag({ ...getLastReadDiag(), source: 'legacy-backend', positions: countPositions(data) })
+      } catch (legacyErr) {
+        setReadDiag({ ...getLastReadDiag(), source: 'fallo-total', legacyError: legacyErr?.message || String(legacyErr), positions: 0 })
       } finally {
         setLoading(false)
       }
@@ -194,7 +209,10 @@ export function usePortfolio(uid) {
   const fetchPortfolioHistory = useCallback(async () => {
     if (!uid) return
     try {
-      setPortfolioHistory(await apiGet('/api/portfolio/history'))
+      // Historial device-owned (cifrado con la DEK). importLegacyHistoryOnce intenta
+      // rescatar los días viejos que escribió el backend antes de device-encrypt.
+      await importLegacyHistoryOnce(uid)
+      setPortfolioHistory(await readDeviceHistory(uid))
     } catch {
       setPortfolioHistory({})
     }
@@ -395,5 +413,6 @@ export function usePortfolio(uid) {
     isStale,
     ultimaSync,
     rend30d,
+    readDiag,
   }
 }

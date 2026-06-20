@@ -88,7 +88,7 @@ body::before {
 
 /* ── KPIs MINI ── */
 .kpis-mini { display: grid; grid-template-columns: repeat(2, 1fr); gap: 8px; padding: 0 16px; margin-bottom: 10px; }
-.kpi { background: var(--surface); border: 1px solid var(--border); border-radius: 10px; padding: 11px 13px; }
+.kpi { position: relative; background: var(--surface); border: 1px solid var(--border); border-radius: 10px; padding: 11px 13px; }
 .kpi-label { font-size: 9px; color: var(--muted); text-transform: uppercase; letter-spacing: .1em; margin-bottom: 3px; }
 .kpi-val { font-family: 'IBM Plex Mono', monospace; font-size: 14px; font-weight: 600; color: #fff; line-height: 1; }
 .kpi-val.pos { color: var(--buy); }

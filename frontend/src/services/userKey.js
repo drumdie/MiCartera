@@ -186,6 +186,22 @@ export async function unlockWithPassphrase(uid, passphrase) {
   cacheDEK(dek)
 }
 
+// Cambio de passphrase: desenvuelve la DEK con la passphrase ACTUAL y la re-envuelve bajo
+// una NUEVA, re-guardando el keywrap. El recovery code NO cambia (sigue abriendo la misma DEK).
+// Lanza si la passphrase actual es incorrecta (AES-GCM falla el decrypt).
+export async function changePassphrase(uid, currentPassphrase, newPassphrase) {
+  if (!newPassphrase || newPassphrase.length < 8) {
+    throw new Error('La nueva passphrase debe tener al menos 8 caracteres')
+  }
+  const data = await loadKeywrap(uid)
+  if (!data) throw new Error('No hay clave configurada para este usuario')
+  const dek = await unwrapUnderSecret(data.passphrase, currentPassphrase)   // falla si la actual es incorrecta
+  data.passphrase = await wrapUnderSecret(dek, newPassphrase)
+  data.updatedAt = new Date().toISOString()
+  await saveKeywrap(uid, data)
+  cacheDEK(dek)
+}
+
 // Recuperación: desenvuelve la DEK con el recovery code y re-envuelve la passphrase con
 // una nueva. Lanza si el recovery code es incorrecto.
 export async function unlockWithRecovery(uid, recoveryCode, newPassphrase) {

@@ -1,7 +1,9 @@
 import React from 'react'
 import ReactDOM from 'react-dom/client'
+import '@tabler/icons-webfont/dist/tabler-icons.min.css'
 import './styles/variables.css'
 import './styles/global.css'
+import './styles/components.css'
 import App from './App'
 
 ReactDOM.createRoot(document.getElementById('root')).render(

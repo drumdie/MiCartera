@@ -99,15 +99,22 @@ export function mesesDesde(isoDate) {
   return (Date.now() - d.getTime()) / (1000 * 60 * 60 * 24 * 30.44)
 }
 
-// Completo: rol + banda válida (min ≤ objetivo ≤ max) + tesis + ≥1 kill criterion
+// Completo: rol + tesis + ≥1 kill criterion.
+// La banda de peso (min/obj/max) se valida solo si el usuario la llenó: si está ausente
+// en Firestore (contratos guardados antes de que existiera el campo, o con pesos borrados)
+// no bloquea el "completo". Si está parcialmente definida se valida la coherencia.
 export function contratoCompleto(c) {
   if (!c?.rol || !c.tesis?.trim()) return false
   const kills = (c.kill_criteria ?? []).filter(k => (k ?? '').trim())
   if (kills.length === 0) return false
   const { peso_min, peso_objetivo, peso_max } = c
-  const nums = [peso_min, peso_objetivo, peso_max].map(Number)
-  if (nums.some(n => !Number.isFinite(n))) return false
-  return nums[0] <= nums[1] && nums[1] <= nums[2]
+  const anyPeso = peso_min != null || peso_objetivo != null || peso_max != null
+  if (anyPeso) {
+    const nums = [peso_min, peso_objetivo, peso_max].map(Number)
+    if (nums.some(n => !Number.isFinite(n))) return false
+    if (!(nums[0] <= nums[1] && nums[1] <= nums[2])) return false
+  }
+  return true
 }
 
 // Stale: la última actualización supera la ventana de revisión elegida

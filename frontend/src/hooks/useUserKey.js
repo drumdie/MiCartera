@@ -57,5 +57,11 @@ export function useUserKey(user) {
     setKeyState('ready')
   }, [user])
 
-  return { keyState, setup, markReady, unlock, recover }
+  // Vuelve al gate de passphrase sin desloguear (para el lock de inactividad).
+  const relock = useCallback(() => {
+    clearDEK()
+    setKeyState('locked')
+  }, [])
+
+  return { keyState, setup, markReady, unlock, recover, relock }
 }

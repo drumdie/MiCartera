@@ -4,7 +4,6 @@ import {
   GoogleAuthProvider,
   signInWithCredential,
   signInWithEmailAndPassword,
-  signInWithPopup,
 } from 'firebase/auth'
 import { auth } from './firebase'
 
@@ -23,7 +22,13 @@ export async function signInNativeWithGoogle() {
   const result = await FirebaseAuthentication.signInWithGoogle()
   const idToken = result.credential?.idToken
   const accessToken = result.credential?.accessToken
-  if (!idToken && !accessToken) return signInWithPopup(auth, new GoogleAuthProvider())
+  // NO caer a signInWithPopup en nativo: en el WebView de Capacitor abre la página web
+  // de Firebase (__/auth/handler) que no puede redirigir de vuelta a la app → se cuelga
+  // ("el tilde de Firebase que nunca vuelve"). Si el plugin nativo no devolvió credencial,
+  // fallamos con un error accionable en vez de dejar al usuario trabado.
+  if (!idToken && !accessToken) {
+    throw new Error('El login de Google no devolvió credencial. Reintentá; si persiste, verificá la conexión.')
+  }
   const credential = GoogleAuthProvider.credential(idToken, accessToken)
   return signInWithCredential(auth, credential)
 }

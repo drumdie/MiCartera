@@ -8,15 +8,20 @@ const provider = new GoogleAuthProvider()
 
 const ACTIVITY_EVENTS = ['mousemove', 'mousedown', 'keydown', 'touchstart', 'scroll', 'click']
 
-export function useSessionSecurity(user) {
+// onLock: callback que se llama cuando dispara el timer (ej: relock de DEK para que
+// el gate de passphrase intercepte antes que el LockScreen de Google re-auth).
+export function useSessionSecurity(user, onLock) {
   const [isLocked,   setIsLocked]   = useState(false)
   const [isReauthing, setIsReauthing] = useState(false)
   const [reAuthError, setReAuthError] = useState(null)
 
   const timerRef    = useRef(null)
   const isLockedRef = useRef(false)
+  const onLockRef   = useRef(onLock)
+  useEffect(() => { onLockRef.current = onLock }, [onLock])
 
   const lock = useCallback(() => {
+    onLockRef.current?.()
     isLockedRef.current = true
     setIsLocked(true)
   }, [])

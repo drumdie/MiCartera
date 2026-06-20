@@ -51,6 +51,14 @@ Thumbs.db
 # ── Binarios locales ──────────────────────────────────────────────────────────
 *.exe
 
+# ── Android builds y firmas — NUNCA al repo ───────────────────────────────────
+# APKs/bundles (pesan y no aportan al código) y keystores (firma = secreto crítico).
+*.apk
+*.aab
+*.jks
+*.keystore
+google-services.json
+
 # ── Claude Code (configuración local) ────────────────────────────────────────
 .claude/
 

@@ -50,6 +50,16 @@ service cloud.firestore {
       allow read, write: if isOwner(uid);
     }
 
+    // Contrato de inversión por ticker y ranking táctico: sin saldos (rol, tesis,
+    // kill criteria, ranking). Plaintext, solo el owner — espejo de catalysts.
+    match /users/{uid}/contratos/{docId} {
+      allow read, write: if isOwner(uid);
+    }
+
+    match /users/{uid}/tactico/{docId} {
+      allow read, write: if isOwner(uid);
+    }
+
     match /users/{uid}/securityEvents/{docId} {
       allow read: if isOwner(uid);
       allow write: if false;

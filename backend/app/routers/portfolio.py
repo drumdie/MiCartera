@@ -381,10 +381,12 @@ def read_user_meta(uid: str, doc_id: str) -> dict:
 class _NoFreshData(Exception):
     """
     PPI no devolvió datos frescos (mercado cerrado / PPI caído). Lleva la última sync
-    conocida para que el endpoint la reporte sin tocar Firestore.
+    conocida para que el endpoint la reporte sin tocar Firestore, y el detalle del error
+    real de PPI (login rechazado, timeout, etc.) para que el cliente pueda diagnosticarlo.
     """
-    def __init__(self, ultima_sync: str):
+    def __init__(self, ultima_sync: str, detail: str = ""):
         self.ultima_sync = ultima_sync
+        self.detail = detail
 
 
 async def _build_user_portfolio(
@@ -450,19 +452,45 @@ async def _build_user_portfolio(
         meta_ref.document("avg_costs").delete()
 
     # Intentar sync desde PPI. Si falla, Firestore queda intacto.
-    try:
-        items, avg_result = await asyncio.gather(
-            ppi_client.get_account_positions(credentials=ppi_credentials),
-            ppi_client.compute_avg_costs(cached_state, credentials=ppi_credentials),
+    async def _attempt_ppi(creds):
+        items_, avg_ = await asyncio.gather(
+            ppi_client.get_account_positions(credentials=creds),
+            ppi_client.compute_avg_costs(cached_state, credentials=creds),
         )
+        return items_, avg_
+
+    # Las credenciales del backend (.env / Secret Manager), usadas como FALLBACK cuando las
+    # que manda el dispositivo fallan el login de PPI. Para un único dueño, esto destraba el
+    # sync sin depender de que el device transmita las creds perfectas. Solo se intenta si
+    # están configuradas y son distintas a las que ya fallaron.
+    _env_creds = PPICredentials.from_settings()
+    _env_usable = all((
+        _env_creds.authorized_client, _env_creds.client_key,
+        _env_creds.api_key, _env_creds.api_secret, _env_creds.account_number,
+    ))
+
+    try:
+        items, avg_result = await _attempt_ppi(ppi_credentials)
         avg_costs, avg_costs_usd, avg_costs_state = avg_result
     except Exception as exc:
-        logger.error("Sync PPI falló para uid=%s: %s", uid, exc)
-        ultima_sync = max(
-            (d.get("ultima_sync", "") for d in existing.values()),
-            default="",
-        )
-        raise _NoFreshData(ultima_sync)
+        logger.error("Sync PPI falló con creds del request para uid=%s: %s", uid, exc)
+        # Fallback a las creds del backend si están y son distintas a las que fallaron.
+        if _env_usable and (ppi_credentials is None or ppi_credentials.cache_key != _env_creds.cache_key):
+            try:
+                logger.info("Reintentando sync con credenciales del backend (fallback) para uid=%s", uid)
+                items, avg_result = await _attempt_ppi(_env_creds)
+                avg_costs, avg_costs_usd, avg_costs_state = avg_result
+                ppi_credentials = _env_creds   # usar estas para el resto (MEP, opening prices, etc.)
+            except Exception as exc2:
+                logger.error("Sync PPI también falló con fallback del backend para uid=%s: %s", uid, exc2)
+                ultima_sync = max((d.get("ultima_sync", "") for d in existing.values()), default="")
+                raise _NoFreshData(ultima_sync, f"{type(exc2).__name__}: {exc2}")
+        else:
+            ultima_sync = max((d.get("ultima_sync", "") for d in existing.values()), default="")
+            # Detalle accionable para el cliente: tipo de excepción + mensaje (ej.
+            # "PPIError: PPI login fallo (HTTP 401)" o "ReadTimeout: ..."). No incluye
+            # credenciales: los mensajes de PPIError/httpx no las contienen.
+            raise _NoFreshData(ultima_sync, f"{type(exc).__name__}: {exc}")
 
     # Leer tipo de cambio MEP: Firestore → PPI → dolarapi.com
     cotiz_snap = db.collection("market").document("cotizaciones").get()
@@ -665,6 +693,7 @@ async def sync_portfolio(request: Request, force_full: bool = False):
             "status": "sin_datos_frescos",
             "stale": True,
             "ultima_sync_exitosa": exc.ultima_sync,
+            "error_detail": exc.detail,
         }
 
     for cat, data in portfolio.items():
@@ -708,6 +737,7 @@ async def sync_portfolio_source(
             "status": "sin_datos_frescos",
             "stale": True,
             "ultima_sync_exitosa": exc.ultima_sync,
+            "error_detail": exc.detail,
         }
 
     return {

@@ -68,6 +68,7 @@ export function AppProvider({ children }) {
   const [syncing,   setSyncing]   = useState(false)
   const [syncError, setSyncError] = useState(null)
   const [lastSync,  setLastSync]  = useState(null)
+  const [syncDiag,  setSyncDiag]  = useState(null)
 
   const { user, loading: authLoading, signIn, signInWithEmail, signOut, isNativeAuth } = useAuth()
 
@@ -83,6 +84,7 @@ export function AppProvider({ children }) {
     isStale:       fsIsStale,
     ultimaSync:    fsUltimaSync,
     rend30d:       fsRend30d,
+    readDiag:      fsReadDiag,
   } = usePortfolio(user?.uid)
 
   // isDemo: solo cuando no hay sesión activa
@@ -118,18 +120,24 @@ export function AppProvider({ children }) {
       // acoplaba una operación de portfolio personal con una escritura global compartida
       // (P0.3). El sync de portfolio lee las cotizaciones ya frescas desde Firestore.
       const result = await syncBrokerPortfolioToDevice(user.uid)
+      setSyncDiag(result._diag ?? null)
       // status "sin_datos_frescos": PPI no disponible, Firestore intacto
       if (result.status === 'sin_datos_frescos') {
         setSyncError('Mercado cerrado — mostrando últimos datos conocidos')
-        setLastSync(result.ultima_sync_exitosa ?? null)
         await refreshPortfolio()
+        setLastSync(result.ultima_sync_exitosa ?? null)
       } else {
-        setLastSync(result.timestamp ?? new Date().toISOString())
         await refreshPortfolio()
         await refreshStress()
+        setLastSync(result.timestamp ?? new Date().toISOString())
       }
     } catch (err) {
       setSyncError(err.message || 'Error al sincronizar con PPI')
+      setSyncDiag({ fatalError: err?.message || 'Error al sincronizar con PPI' })
+      // Aunque el sync falle, intentar mostrar los datos que ya existen en Firestore.
+      // Esto cubre reinstalaciones: SQLite vacío, pero Firestore tiene datos previos
+      // descifrables ahora que la DEK está activa.
+      try { await refreshPortfolio() } catch {}
     } finally {
       setSyncing(false)
     }
@@ -158,7 +166,8 @@ export function AppProvider({ children }) {
       distMode, setDistMode,
       portfolio, cotizaciones, resumen,
       catalizadores, stressTest, fundamental,
-      syncPPI, syncing, syncError, lastSync,
+      syncPPI, syncing, syncError, lastSync, syncDiag,
+      readDiag: !isDemo ? (fsReadDiag ?? null) : null,
       refreshFundamentals,
       isStale: !isDemo && (fsIsStale ?? false),
       ultimaSync: !isDemo ? (fsUltimaSync ?? null) : null,

@@ -1,7 +1,30 @@
-import { BrowserRouter } from 'react-router-dom'
+import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom'
+import { Capacitor } from '@capacitor/core'
 import { AppProvider, useApp } from './store/AppContext'
-import Dashboard   from './pages/Dashboard'
+import DashboardWeb    from './pages/DashboardWeb'
+import DashboardMobile from './pages/DashboardMobile'
+import Perfil      from './pages/Perfil'
+import PerfilInversion from './pages/PerfilInversion'
+import MayorPosicionDetail from './pages/detail/MayorPosicionDetail'
+import GpDetail    from './pages/detail/GpDetail'
+import PosicionesDetail from './pages/detail/PosicionesDetail'
+import MepDetail   from './pages/detail/MepDetail'
 import Login       from './pages/Login'
+
+// apk nativa (Capacitor) → UI mobile rediseñada · browser → UI web "como antes".
+// Override para previsualizar la UI mobile en el navegador: ?ui=mobile (persistido) · ?ui=web vuelve.
+function resolveMobileUI() {
+  if (Capacitor.isNativePlatform()) return true
+  try {
+    const p = new URLSearchParams(window.location.search).get('ui')
+    if (p === 'mobile') { localStorage.setItem('micartera_ui', 'mobile'); return true }
+    if (p === 'web')    { localStorage.removeItem('micartera_ui'); return false }
+    return localStorage.getItem('micartera_ui') === 'mobile'
+  } catch {
+    return false
+  }
+}
+const IS_NATIVE = resolveMobileUI()
 import LockScreen  from './components/ui/LockScreen'
 import { PassphraseSetup, PassphraseUnlock } from './components/ui/PassphraseGate'
 import { DataContract } from './components/ui/DataContract'
@@ -25,8 +48,8 @@ function Spinner() {
 
 function AuthGate() {
   const { user, authLoading } = useApp()
-  const { isLocked, isReauthing, reAuthError, unlock } = useSessionSecurity(user)
-  const { keyState, setup, markReady, unlock: keyUnlock, recover } = useUserKey(user)
+  const { keyState, setup, markReady, unlock: keyUnlock, recover, relock } = useUserKey(user)
+  const { isLocked, isReauthing, reAuthError, unlock } = useSessionSecurity(user, relock)
   // El onboarding (contrato + broker) corre solo con la DEK lista: guardar creds requiere cifrar.
   const { onbState, acceptContract, submitBroker, skipBroker } = useOnboarding(user, keyState === 'ready')
 
@@ -41,7 +64,23 @@ function AuthGate() {
   if (onbState === 'contract') return <DataContract onAccept={acceptContract} />
   if (onbState === 'broker')   return <BrokerOnboarding onSubmit={submitBroker} onSkip={skipBroker} />
   if (isLocked)               return <LockScreen onUnlock={unlock} isReauthing={isReauthing} reAuthError={reAuthError} />
-  return <Dashboard />
+
+  // Web (navegador): UI clásica, sin rutas nuevas — "como antes".
+  if (!IS_NATIVE) return <DashboardWeb />
+
+  // Mobile (apk nativa): UI rediseñada con rutas (perfil, contrato, drill-downs).
+  return (
+    <Routes>
+      <Route path="/"                   element={<DashboardMobile />} />
+      <Route path="/perfil"             element={<Perfil />} />
+      <Route path="/perfil/inversion"   element={<PerfilInversion />} />
+      <Route path="/detalle/mayor-posicion" element={<MayorPosicionDetail />} />
+      <Route path="/detalle/gp"         element={<GpDetail />} />
+      <Route path="/detalle/posiciones" element={<PosicionesDetail />} />
+      <Route path="/detalle/mep"        element={<MepDetail />} />
+      <Route path="*"                   element={<Navigate to="/" replace />} />
+    </Routes>
+  )
 }
 
 export default function App() {

@@ -36,6 +36,7 @@ export default function CategorySection({ title, category, isCedear, isBono, isO
             isON={isON}
             isFCI={isFCI}
             isStale={category?.is_stale ?? false}
+            syncDate={category?.ultima_sync?.substring(0, 10) ?? null}
           />
         ))}
       </div>

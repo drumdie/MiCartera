@@ -12,7 +12,18 @@ function storageKey(uid) {
 
 async function openNativeDb() {
   const sqlite = new SQLiteConnection(CapacitorSQLite)
-  const db = await sqlite.createConnection(DB_NAME, false, 'no-encryption', 1, false)
+  // Reusar una conexión existente en vez de crear una nueva: createConnection lanza
+  // "Connection already exists" si el nombre ya está registrado (típico tras un remount
+  // o si una sesión previa no la cerró). Ese error envenenaba el cache → el portfolio
+  // descifrado se descartaba y la cartera quedaba vacía en mobile.
+  let isConn = false
+  try {
+    isConn = (await sqlite.isConnection(DB_NAME, false))?.result ?? false
+  } catch { /* isConnection no soportado en alguna versión → seguimos con create */ }
+
+  const db = isConn
+    ? await sqlite.retrieveConnection(DB_NAME, false)
+    : await sqlite.createConnection(DB_NAME, false, 'no-encryption', 1, false)
   await db.open()
   await db.execute(`
     CREATE TABLE IF NOT EXISTS portfolio_cache (
@@ -30,7 +41,15 @@ async function openNativeDb() {
 
 async function getDb() {
   if (!Capacitor.isNativePlatform()) return null
-  if (!dbPromise) dbPromise = openNativeDb()
+  // Si la apertura falla, NO cachear la promesa rechazada para siempre: limpiamos dbPromise
+  // para permitir reintento en la próxima llamada. El cache es opcional; un fallo acá degrada
+  // a "sin cache", no rompe la app.
+  if (!dbPromise) {
+    dbPromise = openNativeDb().catch(err => {
+      dbPromise = null
+      throw err
+    })
+  }
   return dbPromise
 }
 
@@ -75,7 +94,9 @@ async function writeFallback(uid, data) {
 export async function saveLocalDocument(uid, collectionName, docId, payload) {
   const cachedAt = new Date().toISOString()
   const updatedAt = getUpdatedAt(payload)
-  const db = await getDb()
+  // Cache best-effort: si SQLite no abre, degradamos a no-op (el dato vive en Firestore).
+  let db
+  try { db = await getDb() } catch { return }
 
   if (!db) {
     const data = await readFallback(uid)
@@ -104,7 +125,10 @@ export async function saveLocalDocument(uid, collectionName, docId, payload) {
 }
 
 export async function readLocalCollection(uid, collectionName) {
-  const db = await getDb()
+  // Si SQLite no abre, degradamos a "sin cache" (out vacío) en vez de lanzar: el caller
+  // reconstruye desde Firestore. Lanzar acá disparaba el fallback legacy por error.
+  let db
+  try { db = await getDb() } catch { return {} }
   const out = {}
 
   if (!db) {
