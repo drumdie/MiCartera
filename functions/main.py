@@ -292,10 +292,10 @@ def _fetch_riesgo_pais_historico() -> tuple:
 # Scheduler: polling de cotizaciones
 # ---------------------------------------------------------------------------
 
-@scheduler_fn.on_schedule(schedule="every 60 seconds")
+@scheduler_fn.on_schedule(schedule="every 2 minutes")
 def polling_cotizaciones(event: scheduler_fn.ScheduledEvent) -> None:
     """
-    Se ejecuta cada 60 segundos.
+    Se ejecuta cada 2 minutos.
     1. Obtiene MEP y CCL desde PPI (via bonos AL30/GD30)
     2. Obtiene BNA y Oficial desde BCRA; Riesgo País desde argentinadatos (BCRA fallback)
     3. Preserva el último valor conocido si alguna fuente devuelve 0

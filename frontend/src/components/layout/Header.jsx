@@ -2,7 +2,7 @@ import { useApp } from '../../store/AppContext'
 import { formatARS } from '../../utils/formatters'
 
 export default function Header({ onSyncDone }) {
-  const { cotizaciones, user, signOut, isDemo, syncPPI, syncing, syncError, lastSync, isStale, ultimaSync } = useApp()
+  const { cotizaciones, user, signOut, isDemo, hasFreshData, syncPPI, syncing, syncError, lastSync, isStale, ultimaSync } = useApp()
   const { dolar_mep, riesgo_pais_pb } = cotizaciones
 
   const handleSync = async () => {
@@ -67,11 +67,11 @@ export default function Header({ onSyncDone }) {
             Dólar MEP
           </div>
           <div style={{ fontFamily: "'IBM Plex Mono', monospace", fontSize: 17, fontWeight: 600, color: 'var(--accent2)' }}>
-            {formatARS(dolar_mep)}
+            {hasFreshData ? formatARS(dolar_mep) : '—'}
           </div>
           <div className="rp-chip">
             <span className="rp-dot" />
-            RP <span>{riesgo_pais_pb}</span> pb
+            RP <span>{hasFreshData && riesgo_pais_pb != null ? riesgo_pais_pb : '—'}</span> pb
           </div>
 
           {!isDemo && (

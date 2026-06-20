@@ -41,7 +41,7 @@ export default function Dashboard() {
           cotizaciones, resumen, portfolio,
           catalizadores, stressTest, fundamental,
           lastSync, rend30d,
-          refreshFundamentals, isDemo, user,
+          refreshFundamentals, isDemo, hasFreshData, user,
           syncPPI, syncing, syncDiag, readDiag } = useApp()
   const { privacyOn, toggle: togglePrivacy } = usePrivacy()
 
@@ -256,9 +256,11 @@ export default function Dashboard() {
     (portfolio?.bonos?.posiciones?.length       ?? 0) +
     (portfolio?.ons?.posiciones?.length         ?? 0) +
     (portfolio?.fci?.posiciones?.length         ?? 0)
-  const hasPositions = isDemo
-    || totalTickers > 0
-    || (portfolio?.liquidez?.detalle?.length ?? 0) > 0
+  // hasPositions: datos de la sesión listos para mostrar. Requiere un sync fresco
+  // (o demo mode). hasFreshData viene de AppContext (isDemo || lastSync != null).
+  const hasPositions = hasFreshData && (
+    isDemo || totalTickers > 0 || (portfolio?.liquidez?.detalle?.length ?? 0) > 0
+  )
 
   // ── Mayor posición (excluye liquidez) ──
   const todasLasPosiciones = [
@@ -305,6 +307,77 @@ export default function Dashboard() {
         {/* ════════ SECCIÓN: POSICIONES (home con hero + KPIs) ════════ */}
         {activeTab === 'posiciones' && (
           <div className="section-fade">
+
+            {!hasFreshData ? (
+              /* ── Estado pre-sync: sin datos frescos ── */
+              <div className="section">
+                <div className="state">
+                  <i className="ti ti-refresh" aria-hidden="true" />
+                  <div className="state-title">Sin sincronizar</div>
+                  <div className="state-desc">Sincronizá con PPI (botón central) para ver tu cartera actualizada.</div>
+                </div>
+
+                {/* Diagnóstico de sync — visible pre-sync cuando hubo un intento fallido */}
+                {!isDemo && syncDiag && (
+                  <div className="sync-diag">
+                    <div className="sync-diag-title">
+                      <i className="ti ti-stethoscope" aria-hidden="true" /> Diagnóstico de sync
+                    </div>
+                    {syncDiag.fatalError ? (
+                      <div className="sync-diag-row err">Error: {syncDiag.fatalError}</div>
+                    ) : (<>
+                      <div className={`sync-diag-row ${syncDiag.credsLoaded ? 'ok' : 'err'}`}>
+                        Credenciales en Firestore: {syncDiag.credsLoaded ? 'sí' : 'NO'}
+                      </div>
+                      {syncDiag.decryptError && (
+                        <div className="sync-diag-row err">Descifrado de credenciales: {syncDiag.decryptError}</div>
+                      )}
+                      <div className={`sync-diag-row ${(syncDiag.missingKeys?.length ?? 1) === 0 ? 'ok' : 'err'}`}>
+                        Campos presentes: {syncDiag.presentKeys?.length ?? 0}/5
+                        {(syncDiag.missingKeys?.length ?? 0) > 0 && ` · faltan: ${syncDiag.missingKeys.join(', ')}`}
+                      </div>
+                      <div className="sync-diag-row">Credenciales usadas: {syncDiag.usedUserCreds ? 'las tuyas' : 'las del backend'}</div>
+                      <div className="sync-diag-row">Status backend: {syncDiag.status ?? '—'}</div>
+                      {syncDiag.backendError && (
+                        <div className="sync-diag-row err">Error PPI: {syncDiag.backendError}</div>
+                      )}
+                      <div className={`sync-diag-row ${(syncDiag.totalPosiciones ?? 0) > 0 ? 'ok' : 'err'}`}>
+                        Posiciones traídas: {syncDiag.totalPosiciones ?? 0}
+                      </div>
+                    </>)}
+                  </div>
+                )}
+
+                {/* Diagnóstico de lectura — visible pre-sync */}
+                {!isDemo && readDiag && (
+                  <div className="sync-diag">
+                    <div className="sync-diag-title">
+                      <i className="ti ti-database-search" aria-hidden="true" /> Diagnóstico de lectura
+                    </div>
+                    <div className={`sync-diag-row ${(readDiag.firestoreDocs ?? 0) > 0 ? 'ok' : 'err'}`}>
+                      Docs en Firestore: {readDiag.firestoreDocs ?? '—'}
+                      {readDiag.docIds?.length ? ` (${readDiag.docIds.join(', ')})` : ''}
+                    </div>
+                    <div className={`sync-diag-row ${(readDiag.decryptedOk ?? 0) > 0 ? 'ok' : 'err'}`}>
+                      Descifrados OK: {readDiag.decryptedOk ?? 0}/{readDiag.firestoreDocs ?? 0}
+                    </div>
+                    {readDiag.decryptErrors?.length > 0 && (
+                      <div className="sync-diag-row err">Error descifrado: {readDiag.decryptErrors[0]}</div>
+                    )}
+                    {readDiag.cacheErrors?.length > 0 && (
+                      <div className="sync-diag-row err">Error cache: {readDiag.cacheErrors[0]}</div>
+                    )}
+                    <div className="sync-diag-row">Origen: {readDiag.source ?? '—'}</div>
+                    {readDiag.legacyError && (
+                      <div className="sync-diag-row err">Error legacy: {readDiag.legacyError}</div>
+                    )}
+                    <div className={`sync-diag-row ${(readDiag.positions ?? 0) > 0 ? 'ok' : 'err'}`}>
+                      Posiciones leídas: {readDiag.positions ?? 0}
+                    </div>
+                  </div>
+                )}
+              </div>
+            ) : (<>
             {/* ── HERO ── */}
             <div className="hero-block">
               <div className="total-card">
@@ -404,8 +477,7 @@ export default function Dashboard() {
                 </div>
               )}
 
-              {/* Diagnóstico del último sync (solo usuario real, cartera vacía). No muestra
-                  ningún valor secreto: solo qué campos de credenciales hay, status y conteos. */}
+              {/* Diagnóstico del último sync (solo usuario real, cartera vacía post-sync) */}
               {!isDemo && totalTickers === 0 && syncDiag && (
                 <div className="sync-diag">
                   <div className="sync-diag-title">
@@ -436,8 +508,7 @@ export default function Dashboard() {
                 </div>
               )}
 
-              {/* Diagnóstico de LECTURA (datos persistidos): muestra por qué no aparece la
-                  cartera del último sync exitoso aunque exista en Firestore. */}
+              {/* Diagnóstico de lectura (post-sync, cartera vacía) */}
               {!isDemo && totalTickers === 0 && readDiag && (
                 <div className="sync-diag">
                   <div className="sync-diag-title">
@@ -484,6 +555,7 @@ export default function Dashboard() {
               </div>
               </>)}
             </div>
+            </>)}
           </div>
         )}
 
@@ -492,9 +564,9 @@ export default function Dashboard() {
           <div className="section section-fade">
             {!hasPositions ? (
               <div className="state">
-                <i className="ti ti-plug-off" aria-hidden="true" />
-                <div className="state-title">Sin posiciones</div>
-                <div className="state-desc">Sincronizá con PPI (botón central ↓) para cargar tu cartera.</div>
+                <i className={`ti ${hasFreshData ? 'ti-plug-off' : 'ti-refresh'}`} aria-hidden="true" />
+                <div className="state-title">{hasFreshData ? 'Sin posiciones' : 'Sin sincronizar'}</div>
+                <div className="state-desc">{hasFreshData ? 'Tu cartera no tiene posiciones activas.' : 'Sincronizá con PPI (botón central) para ver fundamentales.'}</div>
               </div>
             ) : (<>
             <div className="action-btns" style={{ marginTop: 12 }}>
@@ -548,9 +620,9 @@ export default function Dashboard() {
           <div className="section section-fade">
             {!hasPositions ? (
               <div className="state">
-                <i className="ti ti-plug-off" aria-hidden="true" />
-                <div className="state-title">Sin posiciones</div>
-                <div className="state-desc">Sincronizá con PPI (botón central ↓) para cargar tu cartera.</div>
+                <i className={`ti ${hasFreshData ? 'ti-plug-off' : 'ti-refresh'}`} aria-hidden="true" />
+                <div className="state-title">{hasFreshData ? 'Sin posiciones' : 'Sin sincronizar'}</div>
+                <div className="state-desc">{hasFreshData ? 'Tu cartera no tiene posiciones activas.' : 'Sincronizá con PPI (botón central) para ver catalizadores.'}</div>
               </div>
             ) : (<>
             <div className="cat-header">
@@ -638,9 +710,9 @@ export default function Dashboard() {
           <div className="section section-fade">
             {!hasPositions ? (
               <div className="state">
-                <i className="ti ti-plug-off" aria-hidden="true" />
-                <div className="state-title">Sin posiciones</div>
-                <div className="state-desc">Sincronizá con PPI (botón central ↓) para cargar tu cartera.</div>
+                <i className={`ti ${hasFreshData ? 'ti-plug-off' : 'ti-refresh'}`} aria-hidden="true" />
+                <div className="state-title">{hasFreshData ? 'Sin posiciones' : 'Sin sincronizar'}</div>
+                <div className="state-desc">{hasFreshData ? 'Tu cartera no tiene posiciones activas.' : 'Sincronizá con PPI (botón central) para ver gráficos.'}</div>
               </div>
             ) : (<>
             <div className="eyebrow" style={{ margin: '8px 0 10px' }}>Seleccioná un ticker</div>

@@ -44,7 +44,7 @@ export default function Dashboard() {
           cotizaciones, resumen, portfolio,
           catalizadores, stressTest, fundamental,
           lastSync, rend30d,
-          refreshFundamentals, isDemo, user } = useApp()
+          refreshFundamentals, isDemo, hasFreshData, user } = useApp()
   const { privacyOn, toggle: togglePrivacy } = usePrivacy()
 
   const [activeTab,        setActiveTab]        = useState('posiciones')
@@ -292,6 +292,14 @@ export default function Dashboard() {
       <Header onSyncDone={showToast} />
       <DemoBanner />
 
+      {!hasFreshData ? (
+        /* ── Estado pre-sync: sin datos frescos ── */
+        <div style={{ textAlign: 'center', color: 'var(--text-muted, #888)', padding: '60px 16px' }}>
+          <div style={{ fontSize: 40, marginBottom: 12, opacity: 0.5 }}>&#x21bb;</div>
+          <div style={{ fontSize: 18, fontWeight: 600, marginBottom: 8 }}>Sin sincronizar</div>
+          <div>Sincronizá con PPI para ver tu cartera actualizada.</div>
+        </div>
+      ) : (<>
       {/* ── HERO ── */}
       <div className="hero-block fade-in d1">
 
@@ -600,6 +608,7 @@ export default function Dashboard() {
           <TradingViewWidget symbol={selectedTicker ? tickersTV[selectedTicker] : null} />
         </div>
       </div>
+      </>)}
 
       <footer>
         {isDemo

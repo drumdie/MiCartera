@@ -12,7 +12,7 @@ function initials(name) {
 
 export default function Header() {
   const navigate = useNavigate()
-  const { cotizaciones, user, isDemo, syncing, syncError, lastSync, isStale, ultimaSync } = useApp()
+  const { cotizaciones, user, isDemo, hasFreshData, syncing, syncError, lastSync, isStale, ultimaSync } = useApp()
   const { dolar_mep, riesgo_pais_pb } = cotizaciones
 
   const displayName = isDemo ? 'Usuario Demo' : (user.displayName ?? user.email ?? 'Usuario')
@@ -61,17 +61,18 @@ export default function Header() {
       {/* Fila 2: MEP + RP — tappable → gráfico evolutivo */}
       <button
         className="header-rates"
-        onClick={() => navigate('/detalle/mep')}
+        onClick={hasFreshData ? () => navigate('/detalle/mep') : undefined}
         aria-label="Ver tipos de cambio"
+        style={!hasFreshData ? { opacity: 0.5, cursor: 'default' } : undefined}
       >
         <span className="header-rates-item">
           <span className="header-rates-label">MEP</span>
-          <span className="header-rates-val">{formatARS(dolar_mep)}</span>
+          <span className="header-rates-val">{hasFreshData ? formatARS(dolar_mep) : '—'}</span>
         </span>
         <span className="header-rates-sep" aria-hidden="true" />
         <span className="header-rates-item">
           <span className="header-rates-label">RP</span>
-          <span className="header-rates-val">{riesgo_pais_pb != null ? `${riesgo_pais_pb} pb` : '—'}</span>
+          <span className="header-rates-val">{hasFreshData && riesgo_pais_pb != null ? `${riesgo_pais_pb} pb` : '—'}</span>
         </span>
       </button>
 

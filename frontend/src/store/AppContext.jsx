@@ -90,6 +90,12 @@ export function AppProvider({ children }) {
   // isDemo: solo cuando no hay sesión activa
   const isDemo = !user
 
+  // hasFreshData: true cuando es demo O cuando ya se completó un sync en esta sesión.
+  // lastSync se setea SOLO después de que syncPPI resuelve exitosamente (incluso
+  // con 'sin_datos_frescos'). Mientras lastSync sea null, ninguna pantalla debe mostrar
+  // datos reales — podrían ser datos cacheados/stale de una sesión anterior.
+  const hasFreshData = isDemo || lastSync != null
+
   // Cuando el usuario está logueado, los datos de Firestore pueden tardar un ciclo
   // en llegar. Usamos estructuras vacías como fallback en lugar de null.
   const portfolio    = isDemo ? MOCK_PORTFOLIO    : (fsPortfolio    ?? EMPTY_PORTFOLIO)
@@ -160,7 +166,7 @@ export function AppProvider({ children }) {
 
   return (
     <AppContext.Provider value={{
-      user, authLoading, signIn, signInWithEmail, signOut, isNativeAuth, isDemo,
+      user, authLoading, signIn, signInWithEmail, signOut, isNativeAuth, isDemo, hasFreshData,
       activeCurrency, setActiveCurrency,
       privacyOn, setPrivacyOn,
       distMode, setDistMode,

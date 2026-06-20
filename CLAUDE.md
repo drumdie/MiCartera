@@ -111,6 +111,7 @@ Schema completo de referencia en `MiCartera_estructura.json`.
 
 ## Reglas clave
 
+- **Principio rector de arquitectura: seguridad · velocidad · multi-user.** Toda decisión técnica se evalúa contra estos tres pilares. Nota: *multi-user ≠ escala horizontal* — el modelo de datos es multi-user desde el día 1 (aislamiento por `uid`); la escala horizontal (muchas instancias) se habilita cuando haya carga real, sin reescribir el flujo de seguridad (ver ROADMAP → SEC-1, store de sesión swappable A→B).
 - Ningún nominal, precio, rendimiento ni credencial en el código — todo viene de la API o `.env`.
 - El frontend nunca llama directamente a la API de PPI; el backend actúa de proxy.
 - CEDEARs siempre muestran precio en ARS (BYMA) **y** valor del subyacente en USD (NYSE/NASDAQ).

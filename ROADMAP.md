@@ -147,10 +147,11 @@ Storage: creds por-usuario, cifradas con envelope (DEK envuelta bajo passphrase)
 - **F3** — Frontend: quitar todo descifrado de creds (`fernet`/DEK del lado cliente para broker); **revertir el fallback `.env`** del backend (band-aid de hoy).
 - **F4** — Endurecimiento: App Check enforcement (web reCAPTCHA + Android Play Integrity), rate limit, logs sin secretos, rotación de creds, auditoría, IAM mínimo.
 
-### Decisiones a confirmar antes de F1
-- ¿Dónde cachea el backend la DEK por usuario (memoria del proceso vs store con TTL tipo Redis)? Para Cloud Run (multi-instancia) la memoria del proceso no se comparte → definir.
-- Migración de las creds existentes de `/users/{uid}/broker/data` (ya cifradas con la DEK del usuario) al nuevo flujo.
-- Cómo se ingresan/editan las creds en el nuevo modelo (hoy: pantalla v11, temporal; final: write-only + gate por mail).
+### Decisiones tomadas (2026-06-20)
+- **Cache de la DEK → Opción A con interfaz swappable.** La DEK se cachea en **RAM del proceso** detrás de una interfaz `SessionStore` (swappable), con `max-instances=1` en la fase single-owner. El día que haya carga multi-user real se cambia la implementación a **B (Memorystore/Redis cifrado, en VPC, wrap con Secret Manager/KMS)** — **sin tocar el flujo de seguridad** (`/unlock`, TTL, re-unlock). *Multi-user ≠ escala horizontal:* A ya es multi-user (un proceso atiende muchos `uid` con un mapa `{uid → DEK}`); lo que A no hace es repartir carga entre instancias.
+  - **Re-unlock transparente:** en cache-miss (TTL vencido / cold-start / cambio de instancia) el backend responde `401 needs_unlock`; el cliente re-postea `/unlock` con la passphrase que tiene en memoria y reintenta → invisible para el usuario. La DEK nunca se persiste ni se loguea.
+- **Migración de creds existentes → NO se re-cifra nada.** Se reutiliza el ciphertext actual (`/users/{uid}/keywrap/data` + `/users/{uid}/broker/data`). El trabajo es **portar a Python** el unwrap de `deviceKey.js` (PBKDF2-SHA256 + AES-GCM, mismos params) + Fernet (nativo en `cryptography`). **Verificación:** round-trip — el backend descifra las creds reales del usuario y hace **login PPI 200** (cierra de paso la causa raíz pendiente device-vs-`.env`).
+- **Ingreso/edición de creds → write-only ya.** Sacar el "load existing" + el ojo de revelado de la pantalla actual; solo permitir re-ingresar las 5. Editar requiere estar **unlockeado** (passphrase). El **gate de re-verificación por mail → F4** (endurecimiento), no es núcleo de mover el descifrado al backend.
 
 ---
 
@@ -302,6 +303,18 @@ Storage: creds por-usuario, cifradas con envelope (DEK envuelta bajo passphrase)
     Android Keystore, pendiente de P1.2), y **"Perfil de Inversión"** (contrato por tickers, P2).
   - **KPI cards con drill-down:** ej. "Mayor posición" → top 5 posiciones + % cartera + datos.
   - Estados vacío/loading/error explícitos (hoy "failed to fetch" y stress mock se ven como rotos).
+  - **Gating de datos por estado real del usuario (requisito de etapa final, 2026-06-20).** Hoy es una
+    confusión menor de dev (a veces se ve stress test sin login); el comportamiento *final* es:
+    - **Sin login** → NO mostrar cartera; mostrar "no se puede sincronizar / iniciá sesión".
+    - **Logueado OK (Gmail + passphrase)** → mostrar la cartera del **último día de mercado** (last-known-good),
+      con "sincronizado: [fecha]" arriba, + toda la info propia del usuario (stress, fundamentals,
+      catalizadores, gráficos). Si hoy no hay datos frescos (finde/feriado), se muestra lo último guardado.
+    - **Usuario nuevo desde cero (sin credenciales aún)** → TODO vacío. **Nunca** datos de otro usuario
+      (ni stress, ni fundamentals, ni catalizadores del owner): cada sección vacía con placeholder tipo
+      "completar / asignar datos" hasta que **ese** usuario los genere.
+    - Nunca mostrar mocks (`MOCK_COTIZACIONES`/`MOCK_STRESS_TEST`) como si fueran reales (ver P5.2).
+    - Nota: el gate `hasFreshData` (sesión) agregado en 2026-06-20 es una versión *rough* de etapa actual
+      (oculta lo último-conocido al recargar) — se reshapea acá al modelo last-known-good + vacío-por-usuario.
 
 ---
 
