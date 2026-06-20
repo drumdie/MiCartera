@@ -7,6 +7,7 @@ import {
   getCachedDEKMaterial,
   clearDEK,
 } from '../services/userKey'
+import { unlockBackendSession } from '../services/sessionApi'
 
 // Estado del gate de clave por usuario:
 //   loading → averiguando si el usuario ya tiene keywrap
@@ -42,7 +43,10 @@ export function useUserKey(user) {
   // setup NO salta a 'ready': la DEK queda cacheada pero el gate sigue mostrando el
   // recovery code hasta que el usuario confirme que lo guardó (markReady).
   const setup = useCallback(async (passphrase) => {
-    return setupUserKey(user.uid, passphrase)
+    const recoveryCode = await setupUserKey(user.uid, passphrase)
+    // SEC-1: además desbloquear la sesión en el backend (best-effort; no bloquea el flujo local).
+    try { await unlockBackendSession(passphrase) } catch { /* el camino local sigue andando */ }
+    return recoveryCode
   }, [user])
 
   const markReady = useCallback(() => setKeyState('ready'), [])
@@ -50,11 +54,15 @@ export function useUserKey(user) {
   const unlock = useCallback(async (passphrase) => {
     await unlockWithPassphrase(user.uid, passphrase)
     setKeyState('ready')
+    // SEC-1: desbloquear también la sesión backend con la misma passphrase (best-effort).
+    try { await unlockBackendSession(passphrase) } catch { /* best-effort */ }
   }, [user])
 
   const recover = useCallback(async (recoveryCode, newPassphrase) => {
     await unlockWithRecovery(user.uid, recoveryCode, newPassphrase)
     setKeyState('ready')
+    // SEC-1: tras recovery con nueva passphrase, esa passphrase abre el keywrap server-side.
+    if (newPassphrase) { try { await unlockBackendSession(newPassphrase) } catch { /* best-effort */ } }
   }, [user])
 
   // Vuelve al gate de passphrase sin desloguear (para el lock de inactividad).

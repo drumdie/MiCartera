@@ -5,6 +5,7 @@ import { usePrivacy } from '../hooks/usePrivacy'
 import { formatARS, usdAtRate } from '../utils/formatters'
 import { TICKERS_TV } from '../data/mockPortfolio'
 import { apiPost } from '../services/apiClient'
+import { verifyBroker } from '../services/sessionApi'
 import { addCatalyst, deleteCatalyst, replaceCatalysts } from '../services/portfolioService'
 
 import Header          from '../components/layout/HeaderMobile'
@@ -54,6 +55,21 @@ export default function Dashboard() {
   const [catForm,          setCatForm]          = useState({
     fecha: '', evento: '', descripcion: '', tickers: '', urgencia: 'cercano', tipo: 'earnings',
   })
+  const [verifyResult,     setVerifyResult]     = useState(null)
+  const [verifying,        setVerifying]        = useState(false)
+
+  // SEC-1 F1c: prueba que el backend descifra las creds server-side y loguea en PPI.
+  const handleVerifyBroker = async () => {
+    setVerifying(true)
+    setVerifyResult(null)
+    try {
+      setVerifyResult(await verifyBroker())
+    } catch (e) {
+      setVerifyResult({ error: e?.message || 'Error al verificar' })
+    } finally {
+      setVerifying(false)
+    }
+  }
 
   const showToast = (msg) => {
     setToastMsg(msg)
@@ -345,6 +361,32 @@ export default function Dashboard() {
                         Posiciones traídas: {syncDiag.totalPosiciones ?? 0}
                       </div>
                     </>)}
+                  </div>
+                )}
+
+                {/* Verificar broker (backend) — SEC-1 F1c: descifrado server-side + login PPI */}
+                {!isDemo && (
+                  <div className="sync-diag">
+                    <div className="sync-diag-title">
+                      <i className="ti ti-plug-connected" aria-hidden="true" /> Verificar broker (backend)
+                    </div>
+                    <button
+                      onClick={handleVerifyBroker}
+                      disabled={verifying}
+                      style={{ marginTop: 8, padding: '6px 12px', cursor: verifying ? 'default' : 'pointer' }}
+                    >
+                      {verifying ? 'Verificando…' : 'Verificar broker (backend)'}
+                    </button>
+                    {verifyResult && (verifyResult.error ? (
+                      <div className="sync-diag-row err">{verifyResult.error}</div>
+                    ) : (<>
+                      <div className={`sync-diag-row ${verifyResult.login ? 'ok' : 'err'}`}>
+                        Login PPI (backend): {verifyResult.login ? 'OK (200)' : 'falló'}
+                      </div>
+                      <div className={`sync-diag-row ${(verifyResult.posiciones ?? 0) > 0 ? 'ok' : 'err'}`}>
+                        Posiciones (backend): {verifyResult.posiciones ?? 0}
+                      </div>
+                    </>))}
                   </div>
                 )}
 
