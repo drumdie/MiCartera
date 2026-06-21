@@ -17,10 +17,11 @@ import threading
 import time
 from abc import ABC, abstractmethod
 
-# TTL por defecto del desbloqueo (segundos). PROVISIONAL: 1h para single-owner en Cloud Run
-# mientras no exista re-unlock transparente (F3). El ROADMAP plantea ~5 min; bajar cuando el
-# cliente re-desbloquee solo en cache-miss y/o al pasar a multi-user.
-DEFAULT_TTL_SECONDS = 3600
+# Ventana de INACTIVIDAD del desbloqueo (segundos): 3 min, modelo bank-like. Es *sliding* —
+# cada uso autenticado la renueva (ver get()), así un usuario activo no se corta a mitad de
+# acción, pero 3 min sin actividad → la DEK se descarta y hay que re-ingresar la passphrase.
+# Alineado con el lock de inactividad del front (useSessionSecurity, 3 min).
+DEFAULT_TTL_SECONDS = 180
 
 
 class SessionStore(ABC):
@@ -41,22 +42,25 @@ class InProcessSessionStore(SessionStore):
     """Impl A: dict en memoria del proceso, thread-safe, con expiración perezosa."""
 
     def __init__(self) -> None:
-        self._data: dict[str, tuple[bytes, float]] = {}
+        # uid -> (dek, expires_at, ttl). Guardamos el ttl para renovar (sliding) en cada get.
+        self._data: dict[str, tuple[bytes, float, int]] = {}
         self._lock = threading.Lock()
 
     def set(self, uid: str, dek: bytes, ttl: int = DEFAULT_TTL_SECONDS) -> None:
         with self._lock:
-            self._data[uid] = (dek, time.monotonic() + ttl)
+            self._data[uid] = (dek, time.monotonic() + ttl, ttl)
 
     def get(self, uid: str) -> bytes | None:
         with self._lock:
             entry = self._data.get(uid)
             if entry is None:
                 return None
-            dek, expires_at = entry
+            dek, expires_at, ttl = entry
             if time.monotonic() >= expires_at:
                 del self._data[uid]
                 return None
+            # Sliding: cada uso renueva la ventana de inactividad.
+            self._data[uid] = (dek, time.monotonic() + ttl, ttl)
             return dek
 
     def clear(self, uid: str) -> None:

@@ -66,6 +66,14 @@ def status(request: Request):
     return {"unlocked": session_store.get(request.state.uid) is not None}
 
 
+@router.post("/lock")
+def lock(request: Request):
+    """Descarta la DEK de la sesión. La llama el front al bloquearse por inactividad (3 min),
+    para no esperar al TTL. Idempotente."""
+    session_store.clear(request.state.uid)
+    return {"status": "locked"}
+
+
 @router.post("/verify-broker")
 async def verify_broker(request: Request):
     """SEC-1 · F1c — Prueba el modelo backend-managed de punta a punta.

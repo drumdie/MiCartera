@@ -20,10 +20,10 @@ export function useSessionSecurity(user, onLock) {
   const onLockRef   = useRef(onLock)
   useEffect(() => { onLockRef.current = onLock }, [onLock])
 
+  // Inactividad (3 min) → SOLO relock de la DEK: el gate de passphrase re-pide la clave.
+  // NO se dispara re-auth de Google acá; eso queda para cambios de contexto (dispositivo/red) → F4.
   const lock = useCallback(() => {
     onLockRef.current?.()
-    isLockedRef.current = true
-    setIsLocked(true)
   }, [])
 
   const resetTimer = useCallback(() => {

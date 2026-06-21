@@ -9,6 +9,11 @@ export async function unlockBackendSession(passphrase) {
   return apiPost('/api/session/unlock', { passphrase })
 }
 
+// Descarta la DEK en el backend (al bloquearse el front por inactividad).
+export async function lockBackendSession() {
+  return apiPost('/api/session/lock')
+}
+
 // { unlocked: bool } — para saber si hay que re-desbloquear (cache-miss).
 export async function backendSessionStatus() {
   return apiGet('/api/session/status')

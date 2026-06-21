@@ -7,7 +7,7 @@ import {
   getCachedDEKMaterial,
   clearDEK,
 } from '../services/userKey'
-import { unlockBackendSession } from '../services/sessionApi'
+import { unlockBackendSession, lockBackendSession } from '../services/sessionApi'
 
 // Estado del gate de clave por usuario:
 //   loading → averiguando si el usuario ya tiene keywrap
@@ -69,6 +69,8 @@ export function useUserKey(user) {
   const relock = useCallback(() => {
     clearDEK()
     setKeyState('locked')
+    // SEC-1: avisar al backend que descarte la DEK ya (no esperar al TTL).
+    lockBackendSession().catch(() => { /* best-effort */ })
   }, [])
 
   return { keyState, setup, markReady, unlock, recover, relock }
