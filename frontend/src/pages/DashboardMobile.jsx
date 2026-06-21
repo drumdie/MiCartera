@@ -519,6 +519,32 @@ export default function Dashboard() {
                 </div>
               )}
 
+              {/* Verificar broker (backend) — SEC-1 F1c: descifrado server-side + login PPI */}
+              {!isDemo && totalTickers === 0 && (
+                <div className="sync-diag">
+                  <div className="sync-diag-title">
+                    <i className="ti ti-plug-connected" aria-hidden="true" /> Verificar broker (backend)
+                  </div>
+                  <button
+                    onClick={handleVerifyBroker}
+                    disabled={verifying}
+                    style={{ marginTop: 8, padding: '6px 12px', cursor: verifying ? 'default' : 'pointer' }}
+                  >
+                    {verifying ? 'Verificando…' : 'Verificar broker (backend)'}
+                  </button>
+                  {verifyResult && (verifyResult.error ? (
+                    <div className="sync-diag-row err">{verifyResult.error}</div>
+                  ) : (<>
+                    <div className={`sync-diag-row ${verifyResult.login ? 'ok' : 'err'}`}>
+                      Login PPI (backend): {verifyResult.login ? 'OK (200)' : 'falló'}
+                    </div>
+                    <div className={`sync-diag-row ${(verifyResult.posiciones ?? 0) > 0 ? 'ok' : 'err'}`}>
+                      Posiciones (backend): {verifyResult.posiciones ?? 0}
+                    </div>
+                  </>))}
+                </div>
+              )}
+
               {/* Diagnóstico del último sync (solo usuario real, cartera vacía post-sync) */}
               {!isDemo && totalTickers === 0 && syncDiag && (
                 <div className="sync-diag">
