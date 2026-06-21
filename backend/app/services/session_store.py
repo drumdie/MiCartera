@@ -17,8 +17,10 @@ import threading
 import time
 from abc import ABC, abstractmethod
 
-# TTL por defecto del desbloqueo (segundos). Modelo "~5 min" del ROADMAP.
-DEFAULT_TTL_SECONDS = 300
+# TTL por defecto del desbloqueo (segundos). PROVISIONAL: 1h para single-owner en Cloud Run
+# mientras no exista re-unlock transparente (F3). El ROADMAP plantea ~5 min; bajar cuando el
+# cliente re-desbloquee solo en cache-miss y/o al pasar a multi-user.
+DEFAULT_TTL_SECONDS = 3600
 
 
 class SessionStore(ABC):
