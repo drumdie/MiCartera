@@ -85,6 +85,32 @@ async function encryptPayload(payload, material) {
   return { _encrypted: true, _enc_alg: ENCRYPTED_MARKER, payload: bytesToBase64Url(concatBytes(signed, mac)) }
 }
 
+// --- decrypt (espejo de fernet.js decryptPayload) — para probar Python -> JS ---
+function unb64(str) { return Uint8Array.from(atob(str), c => c.charCodeAt(0)) }
+function base64UrlToBytes(value) {
+  const padded = value.replace(/-/g, '+').replace(/_/g, '/').padEnd(Math.ceil(value.length / 4) * 4, '=')
+  return Uint8Array.from(atob(padded), c => c.charCodeAt(0))
+}
+function pkcs7Unpad(bytes) {
+  const pad = bytes[bytes.length - 1]
+  if (pad < 1 || pad > 16 || pad > bytes.length) throw new Error('Padding invalido')
+  return bytes.slice(0, bytes.length - pad)
+}
+async function decryptPayload(payloadB64u, material) {
+  const signingKey = material.slice(0, 16)
+  const encryptionKey = material.slice(16, 32)
+  const token = base64UrlToBytes(payloadB64u)
+  const signed = token.slice(0, token.length - 32)
+  const mac = token.slice(token.length - 32)
+  const hmacKey = await crypto.subtle.importKey('raw', signingKey, { name: 'HMAC', hash: 'SHA-256' }, false, ['verify'])
+  if (!(await crypto.subtle.verify('HMAC', hmacKey, mac, signed))) throw new Error('Firma Fernet invalida')
+  const iv = token.slice(9, 25)
+  const ciphertext = token.slice(25, token.length - 32)
+  const aesKey = await crypto.subtle.importKey('raw', encryptionKey, { name: 'AES-CBC', length: 128 }, false, ['decrypt'])
+  const padded = new Uint8Array(await crypto.subtle.decrypt({ name: 'AES-CBC', iv }, aesKey, ciphertext))
+  return JSON.parse(new TextDecoder().decode(pkcs7Unpad(padded)))
+}
+
 const passphrase = 'vector-passphrase-123'
 const payload = {
   authorized_client: 'API_CLI_REST',
@@ -94,14 +120,19 @@ const payload = {
   account_number: '000000',
 }
 
-const dek = crypto.getRandomValues(new Uint8Array(32))
-const keywrap_blob = await wrapUnderSecret(dek, passphrase)
-const broker_doc = await encryptPayload(payload, dek)
-
-process.stdout.write(JSON.stringify({
-  passphrase,
-  dek_b64: b64(dek),
-  keywrap_blob,
-  broker_doc,
-  expected_payload: payload,
-}))
+if (process.argv[2] === 'decrypt') {
+  // node sec1_devicecrypto_vector.mjs decrypt <dek_b64> <payload_base64url>
+  const dekArg = unb64(process.argv[3])
+  process.stdout.write(JSON.stringify(await decryptPayload(process.argv[4], dekArg)))
+} else {
+  const dek = crypto.getRandomValues(new Uint8Array(32))
+  const keywrap_blob = await wrapUnderSecret(dek, passphrase)
+  const broker_doc = await encryptPayload(payload, dek)
+  process.stdout.write(JSON.stringify({
+    passphrase,
+    dek_b64: b64(dek),
+    keywrap_blob,
+    broker_doc,
+    expected_payload: payload,
+  }))
+}

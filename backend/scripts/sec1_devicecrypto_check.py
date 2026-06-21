@@ -18,7 +18,7 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 BACKEND_ROOT = os.path.join(HERE, "..")
 sys.path.insert(0, BACKEND_ROOT)
 
-from app.services.device_crypto import fernet_decrypt, unwrap_dek  # noqa: E402
+from app.services.device_crypto import fernet_decrypt, fernet_encrypt, unwrap_dek  # noqa: E402
 
 
 def _load_vector() -> dict:
@@ -54,7 +54,17 @@ def main() -> int:
         print("[FAIL] passphrase incorrecta NO falló")
         return 1
 
-    print("\nF1a OK: el backend (Python) descifra exactamente lo que cifra el frontend (JS).")
+    # 4. Python ENCRYPT -> JS DECRYPT: el front puede leer lo que cifra el backend.
+    sample = {"hola": "mundo", "api_key": "abc=", "n": 3}
+    doc = fernet_encrypt(sample, dek)
+    out = subprocess.run(
+        ["node", os.path.join(HERE, "sec1_devicecrypto_vector.mjs"), "decrypt", vec["dek_b64"], doc["payload"]],
+        capture_output=True, text=True, check=True,
+    )
+    assert json.loads(out.stdout) == sample, f"JS no pudo leer lo que cifró Python: {out.stdout}"
+    print("[OK] fernet_encrypt (Python) -> el front (JS) lo descifra")
+
+    print("\nF1a OK: Python y el frontend (JS) cifran/descifran en el mismo formato (ida y vuelta).")
     return 0
 
 

@@ -66,6 +66,13 @@ def unwrap_dek_with_passphrase(keywrap: dict, passphrase: str) -> bytes:
     return unwrap_dek(keywrap["passphrase"], passphrase)
 
 
+def _pkcs7_pad(data: bytes) -> bytes:
+    """Aplica una capa de relleno PKCS7 (espejo de ``pkcs7Pad`` en fernet.js)."""
+    rem = len(data) % 16
+    pad = 16 if rem == 0 else 16 - rem
+    return data + bytes([pad]) * pad
+
+
 def _pkcs7_unpad(data: bytes) -> bytes:
     """Quita una capa de relleno PKCS7 (espejo de ``pkcs7Unpad`` en fernet.js)."""
     if not data:
@@ -102,3 +109,21 @@ def fernet_decrypt(document: dict, dek: bytes) -> Any:
     # así que removemos la capa manual restante antes de parsear el JSON.
     raw = _pkcs7_unpad(Fernet(key).decrypt(token))
     return json.loads(raw.decode("utf-8"))
+
+
+def fernet_encrypt(payload: Any, dek: bytes) -> dict:
+    """Cifra ``payload`` en el MISMO formato que ``fernet.js`` (doble PKCS7), para que el
+    frontend pueda descifrarlo. Devuelve ``{_encrypted, _enc_alg, payload}``.
+
+    Se aplica la capa A de PKCS7 a mano y Fernet agrega la capa B + AES-CBC + HMAC; así el
+    token resultante es idéntico en estructura al que produce el dispositivo.
+    """
+    raw = json.dumps(payload, ensure_ascii=False, separators=(",", ":")).encode("utf-8")
+    padded = _pkcs7_pad(raw)  # capa A manual (igual que fernet.js)
+    key = base64.urlsafe_b64encode(dek)
+    token = Fernet(key).encrypt(padded)  # capa B + AES-CBC + HMAC + base64url
+    return {
+        "_encrypted": True,
+        "_enc_alg": _ENCRYPTED_MARKER,
+        "payload": token.decode("ascii").rstrip("="),  # el front guarda base64url sin padding
+    }
