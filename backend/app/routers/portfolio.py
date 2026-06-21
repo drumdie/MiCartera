@@ -24,6 +24,8 @@ from app.services.encryption import (
     decrypt_payload,
     encrypt_payload,
 )
+from app.services.device_crypto import fernet_decrypt
+from app.services.session_store import session_store
 
 logger = logging.getLogger(__name__)
 
@@ -73,6 +75,34 @@ def _credentials_from_payload(payload: SyncSourceRequest | None) -> PPICredentia
     if not broker_credentials.is_complete():
         raise HTTPException(status_code=400, detail="Credenciales PPI incompletas")
     return broker_credentials.to_ppi_credentials()
+
+
+def _credentials_from_session(uid: str, db) -> PPICredentials | None:
+    """SEC-1 F2: resuelve las credenciales PPI descifrándolas server-side con la DEK
+    desbloqueada (SessionStore). El frontend ya no las manda. Devuelve None si la sesión
+    no está desbloqueada o no hay creds guardadas → cae al fallback .env en _build_user_portfolio.
+    """
+    dek = session_store.get(uid)
+    if dek is None:
+        return None
+    snap = db.collection("users").document(uid).collection("broker").document("data").get()
+    if not snap.exists:
+        return None
+    try:
+        creds = fernet_decrypt(snap.to_dict(), dek)
+    except Exception:
+        logger.info("sync: no se pudo descifrar broker/data con la DEK de sesión uid=%s", uid)
+        return None
+    c = PPICredentials(
+        authorized_client=str(creds.get("authorized_client", "")).strip(),
+        client_key=str(creds.get("client_key", "")).strip(),
+        api_key=str(creds.get("api_key", "")).strip(),
+        api_secret=str(creds.get("api_secret", "")).strip(),
+        account_number=str(creds.get("account_number", "")).strip(),
+    )
+    if not all((c.authorized_client, c.client_key, c.api_key, c.api_secret, c.account_number)):
+        return None
+    return c
 
 # ---------------------------------------------------------------------------
 # Mapeo de categorías PPI → MiCartera
@@ -727,7 +757,9 @@ async def sync_portfolio_source(
     """
     uid = request.state.uid
     db = firestore.client()
-    ppi_credentials = _credentials_from_payload(payload)
+    # SEC-1 F2: si el front no manda creds (nuevo comportamiento), el backend las descifra con
+    # la DEK de la sesión desbloqueada. El body con broker_credentials queda legacy (se quita en F3).
+    ppi_credentials = _credentials_from_payload(payload) or _credentials_from_session(uid, db)
     try:
         portfolio, mercado_abierto, now, _modo, total_posiciones = await _build_user_portfolio(
             uid, db, force_full=False, ppi_credentials=ppi_credentials

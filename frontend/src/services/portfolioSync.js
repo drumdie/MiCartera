@@ -3,7 +3,6 @@ import { db } from './firebase'
 import { apiPost } from './apiClient'
 import { decryptPayload, encryptPayload } from './fernet'
 import { readLocalPortfolio, saveLocalDocument } from './localPortfolioStore'
-import { loadBrokerCreds } from './profileService'
 import { recordDailySnapshot } from './portfolioHistory'
 
 const CATEGORIES = ['acciones_ar', 'cedears', 'bonos', 'ons', 'fci', 'liquidez']
@@ -131,35 +130,23 @@ export async function persistBrokerPortfolio(uid, portfolio) {
 const BROKER_CRED_KEYS = ['authorized_client', 'client_key', 'api_key', 'api_secret', 'account_number']
 
 export async function syncBrokerPortfolioToDevice(uid) {
-  // Diagnóstico: capturamos dónde corta el flujo sin exponer ningún valor secreto
-  // (solo nombres de campos presentes/faltantes y conteos). Lo consume la UI para
-  // mostrar por qué un sync "OK" puede venir sin posiciones.
-  const diag = { credsLoaded: false, decryptError: null, presentKeys: [], missingKeys: [...BROKER_CRED_KEYS] }
+  // SEC-1 F2: el front YA NO descifra ni manda las credenciales del broker. Antes mandaba
+  // `broker_credentials` en el body (visibles en F12/Network). Ahora el BACKEND las descifra
+  // server-side con la DEK desbloqueada vía /api/session/unlock y devuelve el portfolio.
+  const result = await apiPost('/api/portfolio/sync-source', null)
 
-  let brokerCredentials = null
-  try {
-    brokerCredentials = await loadBrokerCreds(uid)
-    diag.credsLoaded = !!brokerCredentials
-  } catch (err) {
-    // No abortar: registramos el fallo de descifrado y seguimos (el backend puede
-    // usar sus propias credenciales). Esto evita que un cred ilegible tire todo el sync.
-    diag.decryptError = err?.message || 'No se pudieron descifrar las credenciales'
+  // Diagnóstico (sin tocar creds en el front): las gestiona el backend.
+  const diag = {
+    credsLoaded: true,
+    decryptError: null,
+    presentKeys: [...BROKER_CRED_KEYS],
+    missingKeys: [],
+    usedUserCreds: true,
+    status: result?.status ?? null,
+    totalPosiciones: result?.total_posiciones ?? 0,
+    // Detalle real de PPI cuando el backend devuelve sin_datos_frescos.
+    backendError: result?.error_detail ?? null,
   }
-
-  diag.presentKeys = BROKER_CRED_KEYS.filter(k => String(brokerCredentials?.[k] || '').trim())
-  diag.missingKeys = BROKER_CRED_KEYS.filter(k => !diag.presentKeys.includes(k))
-  const hasBrokerCredentials = diag.missingKeys.length === 0
-
-  const body = hasBrokerCredentials
-    ? { broker_credentials: brokerCredentials }
-    : null
-  const result = await apiPost('/api/portfolio/sync-source', body)
-  diag.status = result?.status ?? null
-  diag.totalPosiciones = result?.total_posiciones ?? 0
-  diag.usedUserCreds = hasBrokerCredentials
-  // Detalle del error real de PPI cuando el backend devuelve sin_datos_frescos
-  // (ej. "PPIError: PPI login fallo (HTTP 401)" o "ReadTimeout: ...").
-  diag.backendError = result?.error_detail ?? null
 
   if (result?.portfolio) {
     await persistBrokerPortfolio(uid, result.portfolio)
