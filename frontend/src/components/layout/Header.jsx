@@ -1,7 +1,9 @@
+import { useNavigate } from 'react-router-dom'
 import { useApp } from '../../store/AppContext'
 import { formatARS } from '../../utils/formatters'
 
 export default function Header({ onSyncDone }) {
+  const navigate = useNavigate()
   const { cotizaciones, user, signOut, isDemo, hasFreshData, syncPPI, syncing, syncError, lastSync, isStale, ultimaSync } = useApp()
   const { dolar_mep, riesgo_pais_pb } = cotizaciones
 
@@ -19,12 +21,23 @@ export default function Header({ onSyncDone }) {
       <div className="header-top">
         <div>
           <div className="brand">MiCartera<span> · </span>AR</div>
-          <div className="brand-sub">
-            {isDemo
-              ? 'Usuario Demo · Datos de ejemplo'
-              : `${user.displayName ?? user.email} · Abr 2026`
-            }
-          </div>
+          {isDemo ? (
+            <div className="brand-sub">Usuario Demo · Datos de ejemplo</div>
+          ) : (
+            <button
+              className="brand-sub"
+              onClick={() => navigate('/perfil')}
+              title="Abrir perfil y credenciales"
+              style={{
+                background: 'none', border: 'none', padding: 0, margin: 0,
+                cursor: 'pointer', textAlign: 'left', font: 'inherit',
+                color: 'inherit', display: 'flex', alignItems: 'center', gap: 4,
+              }}
+            >
+              {user.displayName ?? user.email}
+              <span style={{ fontSize: 8, opacity: 0.5 }}>▸ Perfil</span>
+            </button>
+          )}
           {/* Estado de sincronización — siempre visible */}
           {!isDemo && (() => {
             if (syncing) return (

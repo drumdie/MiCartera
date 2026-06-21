@@ -65,15 +65,15 @@ function AuthGate() {
   if (onbState === 'broker')   return <BrokerOnboarding onSubmit={submitBroker} onSkip={skipBroker} />
   if (isLocked)               return <LockScreen onUnlock={unlock} isReauthing={isReauthing} reAuthError={reAuthError} />
 
-  // Web (navegador): UI clásica, sin rutas nuevas — "como antes".
-  if (!IS_NATIVE) return <DashboardWeb />
+  // Ambas UIs usan rutas: Perfil y sub-pantallas son compartidas.
+  const Dashboard = IS_NATIVE ? DashboardMobile : DashboardWeb
 
-  // Mobile (apk nativa): UI rediseñada con rutas (perfil, contrato, drill-downs).
   return (
     <Routes>
-      <Route path="/"                   element={<DashboardMobile />} />
+      <Route path="/"                   element={<Dashboard />} />
       <Route path="/perfil"             element={<Perfil />} />
       <Route path="/perfil/inversion"   element={<PerfilInversion />} />
+      {/* Drill-downs mobile (en web no se navegan, pero las rutas no molestan) */}
       <Route path="/detalle/mayor-posicion" element={<MayorPosicionDetail />} />
       <Route path="/detalle/gp"         element={<GpDetail />} />
       <Route path="/detalle/posiciones" element={<PosicionesDetail />} />

@@ -1,5 +1,6 @@
 import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
+import { Capacitor } from '@capacitor/core'
 import { useApp } from '../store/AppContext'
 import { useContratos } from '../hooks/useContratos'
 import { useBiometric } from '../hooks/useBiometric'
@@ -126,7 +127,8 @@ export default function Perfil() {
       {/* Cuenta */}
       <div className="eyebrow" style={{ marginBottom: 9 }}>Cuenta</div>
       <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-        {!isDemo && (
+        {/* SEC-1: las credenciales del broker SOLO se ven/editan en la app nativa (APK), nunca en web. */}
+        {!isDemo && Capacitor.isNativePlatform() && (
           <button className="list-row" onClick={() => setBrokerOpen(true)}>
             <i className="ti ti-plug-connected list-row-ic" style={{ color: 'var(--muted2)' }} aria-hidden="true" />
             <div className="list-row-main">
