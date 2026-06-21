@@ -119,7 +119,7 @@ credenciales de servidor (llamadas a PPI) y nunca ve plaintext.
 
 - **Objetivo:** que el **frontend nunca vea ni descifre** las credenciales del broker. El **backend** las descifra, llama al broker y devuelve **solo datos procesados**. Modelo "tipo banco".
 - **Motivación:** ver actualización 2026-06-20. El modelo device-encrypt actual expone las creds en claro en el cliente (F12/XSS). Reemplaza al esquema "el device manda las creds" de **P1.5**.
-- **Estado:** 📐 diseño acordado, sin implementar. Checkpoint previo: commit `34352fd`.
+- **Estado (2026-06-21):** 🚀 **F1, F2 y F3-frontend HECHOS y deployados.** Backend SEC-1 en Cloud Run (rev `micartera-backend-00005`, min/max=1, sin `PPI_*`), web en `micartera-ar.web.app`. El front ya **no descifra ni manda** credenciales del broker (eliminado `loadBrokerCreds`; pantalla de creds write-only y solo en APK). **Causa raíz del sync RESUELTA**: las creds device tenían typos en `api_key`/`api_secret`, corregidas. Checkpoint previo al refactor: `34352fd`. **Pendiente:** F3c (revertir fallback `.env`) + F4.
 
 ### Arquitectura objetivo
 ```
@@ -142,10 +142,11 @@ Storage: creds por-usuario, cifradas con envelope (DEK envuelta bajo passphrase)
 
 ### Fases
 - **F0** — doc de arquitectura (esto) + checkpoint. ✅
-- **F1** — Backend: endpoint `/unlock` (passphrase → DEK en RAM con TTL) + mover el descifrado de creds 100% al backend. El keywrap (DEK envuelta bajo passphrase) pasa a desenvolverse server-side.
-- **F2** — Endpoints de datos procesados (`/sync`, `/holdings`, `/transactions`, `/analysis`); el frontend deja de mandar `broker_credentials`.
-- **F3** — Frontend: quitar todo descifrado de creds (`fernet`/DEK del lado cliente para broker); **revertir el fallback `.env`** del backend (band-aid de hoy).
-- **F4** — Endurecimiento: App Check enforcement (web reCAPTCHA + Android Play Integrity), rate limit, logs sin secretos, rotación de creds, auditoría, IAM mínimo.
+- **F1** ✅ (2026-06-21) — `device_crypto.py` (unwrap keywrap PBKDF2+AES-GCM + Fernet, probado cross-language JS↔Python con datos reales), `SessionStore` swappable (impl A en proceso), `POST /api/session/unlock` (passphrase → DEK en RAM, TTL 1h provisional) + `/status` + `/verify-broker`. El front llama `/unlock` tras el gate de passphrase (`useUserKey`).
+- **F2** ✅ (2026-06-21) — `/api/portfolio/sync-source`: el backend descifra las creds server-side con la DEK de sesión (`_credentials_from_session`); el front **dejó de mandar `broker_credentials`** (`portfolioSync.js`). Las creds ya no viajan por la red.
+- **F3** 🔧 frontend hecho (2026-06-21) — **eliminado `loadBrokerCreds`** (el front ya no descifra creds del broker); `BrokerCredentials` write-only y solo en APK (`Capacitor.isNativePlatform()`). **PENDIENTE F3c:** revertir el fallback `.env` del backend — hoy **inerte en Cloud Run** (sin `PPI_*`), sigue activo en **local** como red de dev → quitar al cerrar la etapa de desarrollo. ⏰ *Recordar en el próximo checkpoint (pedido del usuario).*
+- **Inactividad (2026-06-21) ✅** — modelo **bank-like**: **3 min de inactividad → re-pide passphrase** (web y mobile). Front `useSessionSecurity` (3 min, resetea con actividad) → relock de la DEK + `POST /api/session/lock`; backend `SessionStore` TTL **3 min sliding**. La inactividad ya **NO** dispara re-auth de Google (se sacó el doble prompt).
+- **F4** — Endurecimiento: App Check enforcement (web reCAPTCHA + Android Play Integrity), rate limit, logs sin secretos, **gate de re-verificación por mail para editar creds**, **re-auth de Gmail por cambio de contexto** (dispositivo nuevo / cambio de red/IP — necesita *session binding* server-side), rotación de creds, auditoría, IAM mínimo.
 
 ### Decisiones tomadas (2026-06-20)
 - **Cache de la DEK → Opción A con interfaz swappable.** La DEK se cachea en **RAM del proceso** detrás de una interfaz `SessionStore` (swappable), con `max-instances=1` en la fase single-owner. El día que haya carga multi-user real se cambia la implementación a **B (Memorystore/Redis cifrado, en VPC, wrap con Secret Manager/KMS)** — **sin tocar el flujo de seguridad** (`/unlock`, TTL, re-unlock). *Multi-user ≠ escala horizontal:* A ya es multi-user (un proceso atiende muchos `uid` con un mapa `{uid → DEK}`); lo que A no hace es repartir carga entre instancias.
