@@ -58,6 +58,8 @@ Thumbs.db
 *.jks
 *.keystore
 google-services.json
+# Carpeta donde se centralizan las APKs de producción compiladas.
+APKS producción/
 
 # ── Claude Code (configuración local) ────────────────────────────────────────
 .claude/

@@ -7,12 +7,14 @@ import {
 } from '../services/portfolioService'
 import { apiGet } from '../services/apiClient'
 import {
+  fetchPortfolioFromBackend,
   pullPortfolioFromFirestore,
   readCachedPortfolio,
   subscribeEncryptedPortfolio,
   getLastReadDiag,
 } from '../services/portfolioSync'
 import { readDeviceHistory, importLegacyHistoryOnce } from '../services/portfolioHistory'
+import { isDEKReady, onDEKChange } from '../services/userKey'
 
 const EMPTY_CAT  = { subtotal_ars: 0, pct_cartera: 0, posiciones: [] }
 const EMPTY_LIQ  = { subtotal_ars: 0, pct_cartera: 0, usd_total_aprox: 0, detalle: [] }
@@ -85,9 +87,11 @@ function computeResumen(portfolio) {
 
   // Rendimiento total desde precio de compra — agregado de todas las categorías
   // (excluye liquidez, que no tiene costo promedio)
+  // G/P TOTAL = precio + renta cobrada (cupones/amortizaciones/dividendos). El backend expone
+  // ganancia_total_* por categoría; fallback a solo-precio para datos viejos sin ese campo.
   const cats = [portfolio.acciones_ar, portfolio.cedears, portfolio.bonos, portfolio.ons, portfolio.fci]
-  const totalGananciaARS = cats.reduce((s, c) => s + (c.ganancia_ars     ?? 0), 0)
-  const totalGananciaUSD = cats.reduce((s, c) => s + (c.ganancia_usd_mep ?? 0), 0)
+  const totalGananciaARS = cats.reduce((s, c) => s + (c.ganancia_total_ars ?? c.ganancia_ars     ?? 0), 0)
+  const totalGananciaUSD = cats.reduce((s, c) => s + (c.ganancia_total_usd ?? c.ganancia_usd_mep ?? 0), 0)
   const totalCostoARS    = cats.reduce((s, c) => s + (c.costo_total_ars  ?? 0), 0)
 
   // null cuando no hay costo de compra (primer sync sin avg_costs calculados)
@@ -183,23 +187,28 @@ export function usePortfolio(uid) {
 
   const fetchPortfolio = useCallback(async () => {
     if (!uid) return
+    // Mostrar el cache local de inmediato (offline-first) mientras llega el dato del backend.
     try {
       const cached = await readCachedPortfolio(uid)
-      setRawPortfolio(cached)
-      const data = await pullPortfolioFromFirestore(uid)
+      if (cached) setRawPortfolio(cached)
+    } catch { /* cache opcional */ }
+    try {
+      // SEC-2 · F2: lectura primaria server-side. El backend descifra con la DEK de sesión
+      // y devuelve el portfolio en claro (y lo cachea localmente).
+      const data = await fetchPortfolioFromBackend(uid)
       setRawPortfolio(data)
-      setReadDiag({ ...getLastReadDiag(), source: 'firestore-dek', positions: countPositions(data) })
+      setReadDiag({ ...getLastReadDiag(), source: 'backend-dek', positions: countPositions(data) })
       setLoading(false)
-    } catch {
+    } catch (backendErr) {
+      // Fallback transicional (F3 lo elimina): el front todavía tiene la DEK, así que puede
+      // leer el ciphertext de Firestore y descifrar localmente. Cubre backend caído / sesión
+      // bloqueada (401 needs_unlock) / datos legacy.
       try {
-        // FIX: fallback temporal para datos cifrados con la clave global legacy.
-        // REASON: los documentos existentes no se pueden abrir con la DEK por usuario hasta migracion P1.2.
-        // IMPACT: Android/offline usa el camino nuevo; web/dev no queda bloqueado durante la transicion.
-        const data = await apiGet('/api/portfolio')
+        const data = await pullPortfolioFromFirestore(uid)
         setRawPortfolio(data)
-        setReadDiag({ ...getLastReadDiag(), source: 'legacy-backend', positions: countPositions(data) })
+        setReadDiag({ ...getLastReadDiag(), source: 'firestore-dek', positions: countPositions(data), backendError: backendErr?.message || String(backendErr) })
       } catch (legacyErr) {
-        setReadDiag({ ...getLastReadDiag(), source: 'fallo-total', legacyError: legacyErr?.message || String(legacyErr), positions: 0 })
+        setReadDiag({ ...getLastReadDiag(), source: 'fallo-total', legacyError: legacyErr?.message || String(legacyErr), backendError: backendErr?.message || String(backendErr), positions: 0 })
       } finally {
         setLoading(false)
       }
@@ -222,30 +231,53 @@ export function usePortfolio(uid) {
     await Promise.all([fetchPortfolio(), fetchPortfolioHistory()])
   }, [fetchPortfolio, fetchPortfolioHistory])
 
-  // Portfolio cifrado en Firestore: lectura directa del ciphertext, decrypt local y cache SQLite.
+  // SEC-2 · F2: la lectura primaria es GET /api/portfolio (backend descifra con la DEK de
+  // sesión). subscribeEncryptedPortfolio queda como canal de updates en vivo / fallback
+  // transicional (lee el ciphertext y descifra con la DEK local — se elimina en F3).
+  // IMPORTANTE: no arrancar antes de la passphrase. usePortfolio vive en AppProvider
+  // (envuelve toda la app), así que se monta apenas hay `user` — antes del gate de passphrase.
+  // La sesión backend se desbloquea junto con la DEK local (useUserKey.unlock), así que
+  // gateamos a isDEKReady() para que tanto el backend-read como el fallback local funcionen.
   useEffect(() => {
     if (!uid) { setLoading(false); return }
     let active = true
-    refreshPortfolio()
-    const unsub = subscribeEncryptedPortfolio(
-      uid,
-      data => {
-        if (!active) return
-        setRawPortfolio(data)
-        setLoading(false)
-      },
-      () => {
-        if (active) setLoading(false)
-      },
-    )
-    const onFocus = () => refreshPortfolio()
-    window.addEventListener('focus', onFocus)
-    document.addEventListener('visibilitychange', onFocus)
+    let unsub = null
+    let onFocus = null
+
+    const start = () => {
+      if (!active || unsub) return   // ya arrancado (evita doble suscripción al re-desbloquear)
+      refreshPortfolio()
+      unsub = subscribeEncryptedPortfolio(
+        uid,
+        data => {
+          if (!active) return
+          setRawPortfolio(data)
+          setLoading(false)
+        },
+        () => {
+          if (active) setLoading(false)
+        },
+      )
+      onFocus = () => refreshPortfolio()
+      window.addEventListener('focus', onFocus)
+      document.addEventListener('visibilitychange', onFocus)
+    }
+
+    if (isDEKReady()) {
+      start()
+    } else {
+      setLoading(false)   // mostrar el gate de passphrase sin spinner colgado
+    }
+    const unsubDEK = onDEKChange(ready => { if (ready) start() })
+
     return () => {
       active = false
-      unsub()
-      window.removeEventListener('focus', onFocus)
-      document.removeEventListener('visibilitychange', onFocus)
+      if (unsub) unsub()
+      if (onFocus) {
+        window.removeEventListener('focus', onFocus)
+        document.removeEventListener('visibilitychange', onFocus)
+      }
+      unsubDEK()
     }
   }, [uid, refreshPortfolio])
 

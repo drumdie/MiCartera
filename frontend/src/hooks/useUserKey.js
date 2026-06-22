@@ -7,7 +7,7 @@ import {
   getCachedDEKMaterial,
   clearDEK,
 } from '../services/userKey'
-import { unlockBackendSession, lockBackendSession } from '../services/sessionApi'
+import { unlockBackendSession, lockBackendSession, clearStoredPassphrase } from '../services/sessionApi'
 
 // Estado del gate de clave por usuario:
 //   loading → averiguando si el usuario ya tiene keywrap
@@ -20,6 +20,7 @@ export function useUserKey(user) {
   useEffect(() => {
     if (!user) {
       clearDEK()
+      clearStoredPassphrase()   // SEC-2 F5: no dejar la passphrase en RAM tras logout
       setKeyState('loading')
       return
     }

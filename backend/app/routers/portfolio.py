@@ -24,8 +24,13 @@ from app.services.encryption import (
     decrypt_payload,
     encrypt_payload,
 )
-from app.services.device_crypto import fernet_decrypt
+from app.services.device_crypto import fernet_decrypt, fernet_encrypt
 from app.services.session_store import session_store
+from app.services.broker_client import (
+    DEFAULT_BROKER_TYPE,
+    BrokerCredentials,
+    get_broker_client,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -68,41 +73,82 @@ class SyncSourceRequest(BaseModel):
     broker_credentials: BrokerCredentialsPayload | None = None
 
 
+# SEC-1/SEC-2 re-unlock contract: el cliente detecta este marcador en el detail del 401 y
+# re-postea /api/session/unlock con la passphrase en memoria, luego reintenta (transparente).
+NEEDS_UNLOCK_DETAIL = "needs_unlock"
+
+
+class NeedsUnlock(HTTPException):
+    """SEC-2: la DEK de sesión no está disponible (locked / TTL vencido / cold-start).
+
+    Responde 401 con ``detail="needs_unlock"`` (string, compatible con el apiClient del
+    front, que lo expone como ``error.message``). El cliente re-postea /api/session/unlock
+    con la passphrase que tiene en memoria y reintenta.
+    """
+
+    def __init__(self, detail: str = NEEDS_UNLOCK_DETAIL):
+        super().__init__(status_code=401, detail=detail)
+
+
+def _require_session_dek(uid: str) -> bytes:
+    """Devuelve la DEK de sesión o lanza NeedsUnlock (401). No persiste ni loguea la DEK."""
+    dek = session_store.get(uid)
+    if dek is None:
+        raise NeedsUnlock()
+    return dek
+
+
 def _credentials_from_payload(payload: SyncSourceRequest | None) -> PPICredentials | None:
     broker_credentials = payload.broker_credentials if payload else None
     if not broker_credentials or not broker_credentials.has_any():
         return None
     if not broker_credentials.is_complete():
-        raise HTTPException(status_code=400, detail="Credenciales PPI incompletas")
+        raise HTTPException(status_code=400, detail="Credenciales del broker incompletas")
     return broker_credentials.to_ppi_credentials()
 
 
+def _broker_credentials_from_session(uid: str, db, dek: bytes) -> BrokerCredentials | None:
+    """Descifra las credenciales del broker (broker-agnósticas) con la DEK de sesión.
+
+    Devuelve un ``BrokerCredentials`` (con ``broker_type``) o None si no hay creds guardadas
+    o están incompletas. El ``broker_type`` se lee del propio doc (default ``ppi``).
+    """
+    snap = db.collection("users").document(uid).collection("broker").document("data").get()
+    if not snap.exists:
+        return None
+    raw = snap.to_dict()
+    # broker_type puede vivir en claro junto al ciphertext (no es secreto) o dentro del
+    # payload cifrado. Preferimos el de afuera si existe.
+    broker_type_outer = str(raw.get("broker_type", "")).strip() or None
+    try:
+        creds = fernet_decrypt(raw, dek)
+    except Exception:
+        logger.info("sync: no se pudo descifrar broker/data con la DEK de sesión uid=%s", uid)
+        return None
+    bc = BrokerCredentials.from_dict(creds, broker_type=broker_type_outer)
+    if not all((bc.authorized_client, bc.client_key, bc.api_key, bc.api_secret, bc.account_number)):
+        return None
+    return bc
+
+
 def _credentials_from_session(uid: str, db) -> PPICredentials | None:
-    """SEC-1 F2: resuelve las credenciales PPI descifrándolas server-side con la DEK
-    desbloqueada (SessionStore). El frontend ya no las manda. Devuelve None si la sesión
+    """SEC-1/SEC-2: resuelve las credenciales del broker descifrándolas server-side con la
+    DEK desbloqueada (SessionStore). El frontend ya no las manda. Devuelve None si la sesión
     no está desbloqueada o no hay creds guardadas → cae al fallback .env en _build_user_portfolio.
+
+    Pasa por la capa de adaptador (BROKER-ABS): hoy todos los brokers terminan en
+    PPICredentials porque el único adaptador es PPI; cuando haya otros, esta función se
+    adapta para devolver el cliente concreto.
     """
     dek = session_store.get(uid)
     if dek is None:
         return None
-    snap = db.collection("users").document(uid).collection("broker").document("data").get()
-    if not snap.exists:
+    bc = _broker_credentials_from_session(uid, db, dek)
+    if bc is None:
         return None
-    try:
-        creds = fernet_decrypt(snap.to_dict(), dek)
-    except Exception:
-        logger.info("sync: no se pudo descifrar broker/data con la DEK de sesión uid=%s", uid)
-        return None
-    c = PPICredentials(
-        authorized_client=str(creds.get("authorized_client", "")).strip(),
-        client_key=str(creds.get("client_key", "")).strip(),
-        api_key=str(creds.get("api_key", "")).strip(),
-        api_secret=str(creds.get("api_secret", "")).strip(),
-        account_number=str(creds.get("account_number", "")).strip(),
-    )
-    if not all((c.authorized_client, c.client_key, c.api_key, c.api_secret, c.account_number)):
-        return None
-    return c
+    broker = get_broker_client(bc)
+    # PPIBrokerClient expone ppi_credentials para el núcleo de sync existente.
+    return getattr(broker, "ppi_credentials", None)
 
 # ---------------------------------------------------------------------------
 # Mapeo de categorías PPI → MiCartera
@@ -251,6 +297,12 @@ def _transform_position(
         "costo_total_ars":     costo_total_ars,
         "ganancia_ars":        ganancia_ars,
         "ganancia_usd_mep":    ganancia_usd_mep,
+        # G/P TOTAL = precio + renta cobrada (cupones + amortizaciones + dividendos).
+        # Para bonos/ONs el precio cae al amortizar, pero el inversor cobró esa amortización:
+        # el retorno económico real es precio + renta. Por defecto = solo-precio; el bloque de
+        # renta (más abajo) lo sobreescribe sumando lo cobrado.
+        "ganancia_total_ars":  ganancia_ars,
+        "ganancia_total_usd":  ganancia_usd_mep,
         "rend_dia_pct":        rend_dia_pct,
         # rend_usd_pct: para instrumentos USD, CEDEARs, y acciones_ar con USD histórico.
         # Para acciones ARS sin histórico USD → null → el frontend usa rend_ars_pct como proxy.
@@ -293,6 +345,11 @@ def _transform_position(
             pos["cupon_cobrado_usd"] = round(float(renta.get("renta_usd", 0)), 2)
             pos["amort_cobrada_usd"] = round(float(renta.get("amort_usd", 0)), 2)
 
+            # G/P TOTAL absoluto = ganancia de precio + renta cobrada. Esto es lo que el
+            # frontend debe mostrar/sumar para que el monto sea coherente con rend_total_*_pct.
+            pos["ganancia_total_ars"] = round(ganancia_ars + renta_ars, 2)
+            pos["ganancia_total_usd"] = round(ganancia_usd_mep + renta_usd, 2)
+
             # Rend. total ARS = (valor_actual + renta − costo) / costo
             pos["rend_total_ars_pct"] = round(
                 (valor + renta_ars - costo_total_ars) / costo_total_ars * 100, 2
@@ -323,15 +380,22 @@ def _build_categoria(posiciones: list[dict]) -> dict:
     costo_total  = sum(p.get("costo_total_ars",    0) for p in posiciones)
     ganancia     = sum(p.get("ganancia_ars",        0) for p in posiciones)
     ganancia_usd = sum(p.get("ganancia_usd_mep",   0) for p in posiciones)
-    rend_pct     = round(ganancia / costo_total * 100, 2) if costo_total > 0 else 0.0
+    # G/P TOTAL (precio + renta cobrada). Fallback a solo-precio si la posición no trae el total.
+    ganancia_total     = sum(p.get("ganancia_total_ars", p.get("ganancia_ars",     0)) for p in posiciones)
+    ganancia_total_usd = sum(p.get("ganancia_total_usd", p.get("ganancia_usd_mep", 0)) for p in posiciones)
+    rend_pct       = round(ganancia / costo_total * 100, 2) if costo_total > 0 else 0.0
+    rend_total_pct = round(ganancia_total / costo_total * 100, 2) if costo_total > 0 else 0.0
     return {
-        "posiciones":       posiciones,
-        "subtotal_ars":     round(subtotal, 2),
-        "costo_total_ars":  round(costo_total, 2),
-        "ganancia_ars":     round(ganancia, 2),
-        "ganancia_usd_mep": round(ganancia_usd, 2),
-        "rend_pct":         rend_pct,
-        "pct_cartera":      0.0,
+        "posiciones":           posiciones,
+        "subtotal_ars":         round(subtotal, 2),
+        "costo_total_ars":      round(costo_total, 2),
+        "ganancia_ars":         round(ganancia, 2),
+        "ganancia_usd_mep":     round(ganancia_usd, 2),
+        "ganancia_total_ars":   round(ganancia_total, 2),
+        "ganancia_total_usd":   round(ganancia_total_usd, 2),
+        "rend_pct":             rend_pct,
+        "rend_total_pct":       rend_total_pct,
+        "pct_cartera":          0.0,
     }
 
 
@@ -377,7 +441,63 @@ def _encrypt_doc(data: dict, label: str) -> dict:
         raise HTTPException(status_code=500, detail="Cifrado no configurado en el backend")
 
 
+# ---------------------------------------------------------------------------
+# SEC-2: cifrado/descifrado con la DEK de sesión (por usuario).
+#
+# Reemplaza la clave global legacy (_encrypt_doc / DATA_ENCRYPTION_KEY) para portfolio
+# y meta. El formato Fernet es el MISMO que escribe/lee el frontend (device_crypto.*),
+# así que durante la transición (F3 pendiente) el front sigue pudiendo descifrar lo que
+# escribe el backend, y viceversa.
+# ---------------------------------------------------------------------------
+
+def _encrypt_doc_dek(data: dict, dek: bytes) -> dict:
+    """Cifra un doc con la DEK de sesión, en el formato Fernet del dispositivo."""
+    return fernet_encrypt(data, dek)
+
+
+def _decrypt_doc_dek(data: dict | None, dek: bytes, label: str) -> dict | None:
+    """Intenta descifrar con la DEK de sesión. Devuelve None si el doc no es legible con
+    esta DEK (p.ej. cifrado con la clave global legacy) — el caller decide el fallback."""
+    if not data:
+        return {}
+    try:
+        return fernet_decrypt(data, dek)
+    except Exception as exc:
+        logger.info("%s: no legible con la DEK de sesión (%s)", label, type(exc).__name__)
+        return None
+
+
+def _decrypt_doc_best_effort(data: dict | None, uid: str, label: str) -> dict | None:
+    """Lectura de un doc cifrado priorizando la DEK de sesión (SEC-2) y cayendo a la clave
+    global legacy (docs viejos). Devuelve None si no se pudo descifrar con ninguna.
+
+    Coexistencia transicional: portfolio nuevo se cifra con la DEK de sesión; meta vieja
+    (avg_costs, history) puede seguir cifrada con la clave global hasta el próximo sync.
+    """
+    if not data:
+        return {}
+    dek = session_store.get(uid)
+    if dek is not None:
+        plain = _decrypt_doc_dek(data, dek, label)
+        if plain is not None:
+            return plain
+    # Fallback legacy: clave global del backend.
+    try:
+        return decrypt_payload(data)
+    except EncryptionNotConfigured:
+        return None
+    except Exception:
+        return None
+
+
 def read_user_portfolio(uid: str) -> dict[str, dict]:
+    """Lee y descifra el portfolio del usuario con la DEK de sesión (SEC-2 · F2).
+
+    Requiere sesión desbloqueada: si la DEK no está disponible, lanza NeedsUnlock (401)
+    para que el cliente re-postee /unlock y reintente. Los docs viejos cifrados con la
+    clave global legacy también se leen (fallback) durante la transición.
+    """
+    dek = _require_session_dek(uid)
     db = firestore.client()
     user_ref = db.collection("users").document(uid)
     categorias = ["acciones_ar", "cedears", "bonos", "ons", "fci", "liquidez"]
@@ -390,19 +510,24 @@ def read_user_portfolio(uid: str) -> dict[str, dict]:
         if not snap.exists:
             portfolio[cat] = fallback
             continue
-        try:
-            portfolio[cat] = _decrypt_doc(snap.to_dict(), f"portfolio/{cat}")
-        except HTTPException:
-            # device-encrypted (DEK del usuario): el backend no lo descifra → vacío. En el modelo
-            # device-encrypt es el dispositivo quien lee/descifra el portfolio, no este endpoint.
-            portfolio[cat] = fallback
+        plain = _decrypt_doc_dek(snap.to_dict(), dek, f"portfolio/{cat}")
+        if plain is None:
+            # No legible con la DEK de sesión → intentar la clave global legacy (docs viejos).
+            try:
+                plain = decrypt_payload(snap.to_dict())
+            except Exception:
+                plain = fallback
+        portfolio[cat] = plain
     return portfolio
 
 
 def read_user_meta(uid: str, doc_id: str) -> dict:
     db = firestore.client()
     snap = db.collection("users").document(uid).collection("meta").document(doc_id).get()
-    return _decrypt_doc(snap.to_dict(), f"meta/{doc_id}") if snap.exists else {}
+    if not snap.exists:
+        return {}
+    plain = _decrypt_doc_best_effort(snap.to_dict(), uid, f"meta/{doc_id}")
+    return plain if plain is not None else {}
 
 # ---------------------------------------------------------------------------
 # Endpoint
@@ -426,6 +551,7 @@ async def _build_user_portfolio(
     force_full: bool = False,
     write_history: bool = True,
     ppi_credentials: PPICredentials | None = None,
+    dek: bytes | None = None,
 ) -> tuple[dict, bool, str, str, int]:
     """
     Núcleo compartido por POST /sync y POST /sync-source.
@@ -433,9 +559,11 @@ async def _build_user_portfolio(
     Hace TODO el trabajo costoso una sola vez (cache incremental de avg_cost, ajuste por
     split/acción corporativa, costo USD histórico, renta cobrada, preservación de
     rend_dia_pct) y persiste server-side el cache avg_costs y el snapshot de history.
-    NO escribe /users/{uid}/portfolio — eso lo decide cada endpoint: el legacy /sync lo
-    cifra con la clave global del backend; /sync-source lo devuelve para que el dispositivo
-    lo cifre con la DEK del usuario (modelo Android/offline-first).
+    NO escribe /users/{uid}/portfolio — eso lo decide cada endpoint.
+
+    SEC-2: si se pasa ``dek`` (DEK de sesión del usuario), TODO el at-rest (portfolio, meta:
+    avg_costs e history) se cifra/descifra con esa DEK vía device_crypto (mismo formato que
+    el frontend). Si ``dek`` es None se usa la clave global legacy (camino /sync legacy).
 
     Retorna (portfolio, mercado_abierto, now, modo_sync, total_posiciones).
     Lanza _NoFreshData si PPI no responde (mercado cerrado / PPI caído).
@@ -443,26 +571,41 @@ async def _build_user_portfolio(
     user_ref = db.collection("users").document(uid)
     meta_ref  = user_ref.collection("meta")
 
+    # Helpers de cifrado/descifrado que respetan la DEK de sesión cuando está presente.
+    def _dec(data, label):
+        if dek is not None:
+            plain = _decrypt_doc_dek(data, dek, label)
+            if plain is not None:
+                return plain
+            # Fallback a la clave global legacy (docs viejos pre-SEC-2).
+            try:
+                return decrypt_payload(data)
+            except Exception:
+                return None
+        return _decrypt_doc(data, label)
+
+    def _enc(data, label):
+        return _encrypt_doc_dek(data, dek) if dek is not None else _encrypt_doc(data, label)
+
     # Leer en paralelo: portfolio existente + cache de costos promedios
     _CATS = ["acciones_ar", "cedears", "bonos", "ons", "fci", "liquidez"]
     existing: dict[str, dict] = {}
     for cat in _CATS:
         snap = user_ref.collection("portfolio").document(cat).get()
         if snap.exists:
-            try:
-                existing[cat] = _decrypt_doc(snap.to_dict(), f"portfolio/{cat}")
-            except HTTPException:
-                # Flujo device-encrypt: el portfolio se cifra con la DEK del usuario (no con la
-                # clave global del backend) → el backend NO puede leerlo, y está bien. Solo se
-                # pierde la preservación de rend_dia de esa categoría; el dispositivo igual lo
-                # sobrescribe con el sync nuevo. NO es un error fatal.
-                logger.info("portfolio/%s no legible por el backend (device-encrypted) — se omite", cat)
+            plain = _dec(snap.to_dict(), f"portfolio/{cat}")
+            if plain is not None:
+                existing[cat] = plain
+            else:
+                # No legible (cifrado con otra clave). Solo se pierde la preservación de
+                # rend_dia de esa categoría; el sync nuevo igual la sobreescribe. No es fatal.
+                logger.info("portfolio/%s no legible para preservar rend_dia — se omite", cat)
 
     cached_state = None
     if not force_full:
         cache_snap = meta_ref.document("avg_costs").get()
         if cache_snap.exists:
-            cached = _decrypt_doc(cache_snap.to_dict(), "meta/avg_costs")
+            cached = _dec(cache_snap.to_dict(), "meta/avg_costs") or {}
             if cached.get("full_sync_completed"):
                 # Auto-detect: forzar recálculo full cuando el cache es de una versión
                 # anterior al fix. Dos señales:
@@ -666,7 +809,7 @@ async def _build_user_portfolio(
 
     # Persistir cache de costos promedios para syncs incrementales futuros
     meta_ref.document("avg_costs").set(
-        _encrypt_doc(avg_costs_state, "meta/avg_costs")
+        _enc(avg_costs_state, "meta/avg_costs")
     )
 
     # Snapshot diario del valor total para calcular rendimiento mensual.
@@ -684,13 +827,13 @@ async def _build_user_portfolio(
             history_ref = meta_ref.document("portfolio_history")
             history_snap = history_ref.get()
             history = (
-                _decrypt_doc(history_snap.to_dict(), "meta/portfolio_history")
+                (_dec(history_snap.to_dict(), "meta/portfolio_history") or {})
                 if history_snap.exists
                 else {}
             )
             history[today_bue] = total_snapshot
             history_ref.set(
-                _encrypt_doc(history, "meta/portfolio_history")
+                _enc(history, "meta/portfolio_history")
             )
 
     modo_sync = "full_5y" if force_full or cached_state is None else "incremental"
@@ -747,22 +890,30 @@ async def sync_portfolio_source(
     request: Request,
     payload: SyncSourceRequest | None = Body(default=None),
 ):
-    """
-    Devuelve portfolio transformado desde PPI sin descifrar ni escribir Firestore.
+    """SEC-2 · F1 — Escritura server-side con la DEK de sesión.
 
-    FIX: el backend queda como intermediario PPI para el flujo Android/offline-first.
-    REASON: el dispositivo cifra con la DEK del usuario y persiste ciphertext en Firestore.
-    IMPACT: este endpoint transporta plaintext solo en memoria/respuesta autenticada; no usa
-    DATA_ENCRYPTION_KEY ni toca /users/{uid}/portfolio.
+    El BACKEND descifra las credenciales del broker (server-side, con la DEK desbloqueada),
+    llama al broker, construye el portfolio, lo **cifra con la DEK de sesión** (mismo formato
+    Fernet que el dispositivo) y lo **escribe en Firestore** con el Admin SDK. También cifra
+    la meta (avg_costs, portfolio_history) con la DEK. Reemplaza el cifrado que hacía el
+    frontend y la clave global legacy.
+
+    Requiere sesión desbloqueada: si la DEK no está disponible, responde 401 needs_unlock
+    (el cliente re-postea /api/session/unlock y reintenta). Devuelve además el portfolio en
+    claro en la respuesta autenticada para que el front lo use directo (read F2 / cache offline
+    durante la transición — F3 elimina el Fernet JS del front).
+
+    El body ``broker_credentials`` queda legacy (se quita en F3); si llega, se respeta.
     """
     uid = request.state.uid
     db = firestore.client()
-    # SEC-1 F2: si el front no manda creds (nuevo comportamiento), el backend las descifra con
-    # la DEK de la sesión desbloqueada. El body con broker_credentials queda legacy (se quita en F3).
+    # SEC-2 F1: la DEK de sesión es obligatoria para escribir at-rest con la clave del usuario.
+    dek = _require_session_dek(uid)
+    # Credenciales del broker: del body (legacy) o descifradas server-side con la DEK de sesión.
     ppi_credentials = _credentials_from_payload(payload) or _credentials_from_session(uid, db)
     try:
-        portfolio, mercado_abierto, now, _modo, total_posiciones = await _build_user_portfolio(
-            uid, db, force_full=False, ppi_credentials=ppi_credentials
+        portfolio, mercado_abierto, now, modo_sync, total_posiciones = await _build_user_portfolio(
+            uid, db, force_full=False, ppi_credentials=ppi_credentials, dek=dek
         )
     except _NoFreshData as exc:
         return {
@@ -772,11 +923,20 @@ async def sync_portfolio_source(
             "error_detail": exc.detail,
         }
 
+    # F1: escribir el portfolio cifrado con la DEK de sesión (server-side, Admin SDK).
+    user_ref = db.collection("users").document(uid)
+    for cat, data in portfolio.items():
+        user_ref.collection("portfolio").document(cat).set(
+            _encrypt_doc_dek(data, dek)
+        )
+
     return {
         "status": "ok",
         "uid": uid,
         "stale": not mercado_abierto,
-        "modo_sync": "device_encrypt",
+        "modo_sync": modo_sync,
+        # portfolio en claro: durante la transición el front lo consume directo (F2) y/o lo
+        # cachea offline. F3 elimina la persistencia/cifrado del lado del front.
         "portfolio": portfolio,
         "categorias_sincronizadas": list(portfolio.keys()),
         "total_posiciones": total_posiciones,
@@ -786,7 +946,8 @@ async def sync_portfolio_source(
 
 @router.get("")
 async def get_portfolio(request: Request):
-    """Devuelve el portfolio desencriptado del usuario autenticado."""
+    """SEC-2 · F2 — Devuelve el portfolio en claro, descifrado server-side con la DEK de
+    sesión. Si la sesión está bloqueada responde 401 needs_unlock (re-unlock + retry)."""
     return read_user_portfolio(request.state.uid)
 
 

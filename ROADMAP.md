@@ -156,6 +156,36 @@ Storage: creds por-usuario, cifradas con envelope (DEK envuelta bajo passphrase)
 
 ---
 
+## 🔐 SEC-2 · Crypto 100% server-side (la DEK nunca vive en el frontend) — **decidido 2026-06-22**
+
+- **Motivación (pedido del usuario):** hoy el frontend genera la DEK (`setupUserKey`), la desenvuelve con la passphrase, la guarda en `_dekMaterial`, y cifra/descifra cartera y creds con Fernet JS. Objetivo: que **el frontend nunca tenga la DEK ni haga Fernet**, y que **no lea `/portfolio` `/broker` `/keywrap` directo**. SEC-1 dejó la base (`device_crypto.py` + `SessionStore`); SEC-2 lo termina.
+- **Matiz honesto asumido:** mientras el usuario tipee la passphrase en el front, un front comprometido puede capturarla y replicarla al backend. SEC-2 **reduce el blast radius** (un XSS ya no roba la clave maestra ni descifra el at-rest), no es zero-trust absoluto del cliente. Vale igual.
+- **Estado de partida (hallazgo 2026-06-22):** conviven **dos esquemas** en el backend — `_encrypt_doc/_decrypt_doc` usan la **clave global legacy** (`DATA_ENCRYPTION_KEY`), mientras el portfolio real está **device-encrypted con la DEK por-usuario** (el front lo escribe; `read_user_portfolio` ni lo lee → cae a vacío). **SEC-2 unifica todo en la DEK de sesión** (`device_crypto.fernet_*` + `session_store.get(uid)`), server-side.
+
+**Fases:**
+- **F1 — Escritura server-side.** El backend cifra portfolio (y meta: avg_costs, history) con la **DEK de sesión** y escribe en Firestore. Reemplaza el cifrado que hoy hace el front y la clave global legacy.
+- **F2 — Lectura server-side.** `GET /api/portfolio` descifra con la DEK de sesión y devuelve **plano**. El front consume ese endpoint en vez de leer ciphertext + descifrar local.
+- **F3 — Purga del front.** Eliminar `_dekMaterial`, `getUserDEKMaterial()`, Fernet JS y los reads directos a `/portfolio` `/broker` `/keywrap`. (Depende de **B-limitada** para el offline.)
+- **F4 — Firestore Rules.** Bloquear `/portfolio` `/broker` `/keywrap` (y meta) **completamente al cliente** (solo backend con Admin SDK).
+- **F5 — Sesión/DEK.** Confirmar TTL 3 min + borrado en lock/logout + binding a sesión (parte ya en SEC-1; reforzar).
+
+**Decisiones de diseño (2026-06-22):**
+- **Offline → Opción B-limitada** (no online-only). Caché de dispositivo con clave **no exportable en Android Keystore**, crypto **nativa (no WebView)**, **SQLCipher** bien configurado. Cachea **solo cartera procesada para la UI** (resumen, posiciones, últimas cotizaciones). **Nunca** cachea: creds del broker, DEK del servidor, passphrase/recovery, tokens. `allowBackup=false`. Label "datos offline del…" + **expiración 24–48h**. Wipe en logout/cambio de user y si se invalida biometría/Keystore → rebuild online. Movimientos detallados / creds / operaciones sensibles: **solo online**. → Es su propio **hito, después de SEC-2** (trabajo nativo Android; web queda online-only).
+- **No hay procesamiento server-side de datos de usuario sin el user presente** (confirmado por el usuario: para eso está el botón sync). Habilita el doble control de SEC-3 sin sacrificar nada.
+
+**SEC-3 · Doble control (passphrase + KMS) — fase posterior.** `K_combinada = HKDF(clave_de_passphrase, KMS.decrypt(secreto_kms_del_usuario))` → desenvolver la DEK requiere **passphrase Y KMS**. Preserva que el operador **no** pueda descifrar unilateralmente, suma anti-dump + audit + rotación (rotar la KMS sin re-cifrar datos). La "recuperación" sigue siendo por **recovery code** (lado usuario), no por KMS. No bloquea SEC-2.
+
+**BROKER-ABS · Multi-broker (se contempla en SEC-2).** La app es **multi-user y multi-broker** desde el día 1 — NO es una app PPI. Un user nuevo entra, carga **sus** Broker Credentials y anda.
+- Capa de **adaptador de broker** (`BrokerClient` con implementaciones; hoy solo `PPIBrokerClient` envolviendo `ppi_client`), elegida por-usuario vía un campo `broker_type`. Las creds pasan a ser **genéricas** ("broker creds"), no "creds PPI".
+- Los endpoints nuevos de SEC-2 (cifrar/leer, creds write-only) nacen **broker-agnósticos**.
+- Antes de producción: leer specs/forms de otras Broker APIs e implementar 1-2 adaptadores más.
+
+**COTI · Cotizaciones globales (rediseño de cadencia + fuente).** Hoy el scheduler corre **cada 2 min 24/7** (incluso con mercado cerrado) y saca MEP/CCL de **AL30/GD30 vía la cuenta PPI del owner**. Cambios:
+- **Cadencia market-aware:** refrescar el doc global solo en **horario de mercado BYMA** (días hábiles) cada ~10 min; pausa / 1-2x por día con mercado cerrado. Mantener el modelo **global-doc read-only para clientes** (no re-acoplar la apertura de cada user con una escritura global compartida — ver P0.3). *(Recomendación de Claude; el usuario evaluaba on-open vs N-veces/día.)*
+- **Fuente keyless para datos globales:** sacar MEP/CCL/oficial/RP de una **fuente pública sin credenciales** (p.ej. dolarapi/criptoya/argentinadatos) → **no depende de la cuenta de ningún user/broker**. Los **precios por-ticker** siguen viniendo del **sync por-usuario** (cada user trae los suyos), no del scheduler.
+
+---
+
 # Bloques por prioridad (previos)
 
 ## P0 · Hardening de seguridad pre-exposición

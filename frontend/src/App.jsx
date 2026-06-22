@@ -9,6 +9,7 @@ import MayorPosicionDetail from './pages/detail/MayorPosicionDetail'
 import GpDetail    from './pages/detail/GpDetail'
 import PosicionesDetail from './pages/detail/PosicionesDetail'
 import MepDetail   from './pages/detail/MepDetail'
+import RiesgoPaisDetail from './pages/detail/RiesgoPaisDetail'
 import Login       from './pages/Login'
 
 // apk nativa (Capacitor) → UI mobile rediseñada · browser → UI web "como antes".
@@ -26,6 +27,7 @@ function resolveMobileUI() {
 }
 const IS_NATIVE = resolveMobileUI()
 import LockScreen  from './components/ui/LockScreen'
+import AndroidBackHandler from './components/ui/AndroidBackHandler'
 import { PassphraseSetup, PassphraseUnlock } from './components/ui/PassphraseGate'
 import { DataContract } from './components/ui/DataContract'
 import { BrokerOnboarding } from './components/ui/BrokerOnboarding'
@@ -69,6 +71,8 @@ function AuthGate() {
   const Dashboard = IS_NATIVE ? DashboardMobile : DashboardWeb
 
   return (
+    <>
+    <AndroidBackHandler />
     <Routes>
       <Route path="/"                   element={<Dashboard />} />
       <Route path="/perfil"             element={<Perfil />} />
@@ -78,8 +82,10 @@ function AuthGate() {
       <Route path="/detalle/gp"         element={<GpDetail />} />
       <Route path="/detalle/posiciones" element={<PosicionesDetail />} />
       <Route path="/detalle/mep"        element={<MepDetail />} />
+      <Route path="/detalle/rp"         element={<RiesgoPaisDetail />} />
       <Route path="*"                   element={<Navigate to="/" replace />} />
     </Routes>
+    </>
   )
 }
 

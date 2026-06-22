@@ -303,11 +303,16 @@
   width: 100%; margin-top: 10px;
   background: var(--surface); border: 1px solid var(--border);
   border-radius: var(--r-md); padding: 8px 14px;
-  cursor: pointer; text-align: left;
-  transition: transform .12s var(--ease), border-color .2s;
+  text-align: left;
+  transition: border-color .2s;
 }
-.header-rates:active { transform: scale(.985); border-color: var(--border2); }
-.header-rates-item { display: flex; flex-direction: column; gap: 1px; flex: 1; }
+.header-rates-item {
+  display: flex; flex-direction: column; gap: 1px; flex: 1;
+  background: none; border: none; padding: 0; margin: 0;
+  font: inherit; color: inherit; text-align: left; cursor: pointer;
+  transition: transform .12s var(--ease);
+}
+.header-rates-item:active { transform: scale(.97); }
 .header-rates-label { font-size: 10px; color: var(--muted); text-transform: uppercase; letter-spacing: .1em; }
 .header-rates-val { font-family: var(--font-num); font-size: 16px; font-weight: 600; color: var(--accent2); line-height: 1.2; }
 .header-rates-sep { width: 1px; background: var(--border2); align-self: stretch; margin: 0 14px; }

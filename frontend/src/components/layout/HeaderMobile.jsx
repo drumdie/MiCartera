@@ -58,23 +58,30 @@ export default function Header() {
         )}
       </div>
 
-      {/* Fila 2: MEP + RP — tappable → gráfico evolutivo */}
-      <button
-        className="header-rates"
-        onClick={hasFreshData ? () => navigate('/detalle/mep') : undefined}
-        aria-label="Ver tipos de cambio"
-        style={!hasFreshData ? { opacity: 0.5, cursor: 'default' } : undefined}
-      >
-        <span className="header-rates-item">
+      {/* Fila 2: MEP + RP — cada chip navega a su propio detalle */}
+      <div className="header-rates" style={!hasFreshData ? { opacity: 0.5 } : undefined}>
+        <button
+          type="button"
+          className="header-rates-item"
+          onClick={hasFreshData ? () => navigate('/detalle/mep') : undefined}
+          aria-label="Ver tipos de cambio"
+          style={!hasFreshData ? { cursor: 'default' } : undefined}
+        >
           <span className="header-rates-label">MEP</span>
           <span className="header-rates-val">{hasFreshData ? formatARS(dolar_mep) : '—'}</span>
-        </span>
+        </button>
         <span className="header-rates-sep" aria-hidden="true" />
-        <span className="header-rates-item">
+        <button
+          type="button"
+          className="header-rates-item"
+          onClick={hasFreshData ? () => navigate('/detalle/rp') : undefined}
+          aria-label="Ver riesgo país"
+          style={!hasFreshData ? { cursor: 'default' } : undefined}
+        >
           <span className="header-rates-label">RP</span>
           <span className="header-rates-val">{hasFreshData && riesgo_pais_pb != null ? `${riesgo_pais_pb} pb` : '—'}</span>
-        </span>
-      </button>
+        </button>
+      </div>
 
       {syncStatus && (
         <div className={`sync-line ${syncStatus.cls}`}>

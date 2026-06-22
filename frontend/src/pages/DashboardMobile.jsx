@@ -6,6 +6,7 @@ import { formatARS, usdAtRate } from '../utils/formatters'
 import { TICKERS_TV } from '../data/mockPortfolio'
 import { apiPost } from '../services/apiClient'
 import { addCatalyst, deleteCatalyst, replaceCatalysts } from '../services/portfolioService'
+import { registerDashboardBack } from '../services/backNav'
 
 import Header          from '../components/layout/HeaderMobile'
 import BottomNav       from '../components/layout/BottomNav'
@@ -42,7 +43,7 @@ export default function Dashboard() {
           catalizadores, stressTest, fundamental,
           lastSync, rend30d,
           refreshFundamentals, isDemo, hasFreshData, user,
-          syncPPI, syncing, syncDiag, readDiag } = useApp()
+          syncPPI, syncing } = useApp()
   const { privacyOn, toggle: togglePrivacy } = usePrivacy()
 
   const [activeTab,        setActiveTab]        = useState('posiciones')
@@ -168,6 +169,21 @@ export default function Dashboard() {
     setActiveTab(id)
     window.scrollTo(0, 0)
   }
+
+  // Botón back de Android: cuando estamos en "/", el dashboard consume el evento si hay
+  // un modal abierto o un tab no-principal; si ya está en el tab principal sin overlays,
+  // devuelve false y el handler global aplica el doble-tap para salir.
+  useEffect(() => {
+    return registerDashboardBack({
+      handleBack: () => {
+        if (modalOpen)   { setModalOpen(false);   return true }
+        if (showCatForm) { setShowCatForm(false); return true }
+        if (activeTab !== 'posiciones') { switchTab('posiciones'); return true }
+        return false
+      },
+      showToast,
+    })
+  }, [modalOpen, showCatForm, activeTab]) // eslint-disable-line react-hooks/exhaustive-deps
 
   // ── Distribución para DonutChart (desde datos reales del resumen) ────────
   const distInstrumento = Object.entries(resumen?.composicion_pct ?? {})
@@ -315,66 +331,6 @@ export default function Dashboard() {
                   <div className="state-title">Sin sincronizar</div>
                   <div className="state-desc">Sincronizá con PPI (botón central) para ver tu cartera actualizada.</div>
                 </div>
-
-                {/* Diagnóstico de sync — visible pre-sync cuando hubo un intento fallido */}
-                {!isDemo && syncDiag && (
-                  <div className="sync-diag">
-                    <div className="sync-diag-title">
-                      <i className="ti ti-stethoscope" aria-hidden="true" /> Diagnóstico de sync
-                    </div>
-                    {syncDiag.fatalError ? (
-                      <div className="sync-diag-row err">Error: {syncDiag.fatalError}</div>
-                    ) : (<>
-                      <div className={`sync-diag-row ${syncDiag.credsLoaded ? 'ok' : 'err'}`}>
-                        Credenciales en Firestore: {syncDiag.credsLoaded ? 'sí' : 'NO'}
-                      </div>
-                      {syncDiag.decryptError && (
-                        <div className="sync-diag-row err">Descifrado de credenciales: {syncDiag.decryptError}</div>
-                      )}
-                      <div className={`sync-diag-row ${(syncDiag.missingKeys?.length ?? 1) === 0 ? 'ok' : 'err'}`}>
-                        Campos presentes: {syncDiag.presentKeys?.length ?? 0}/5
-                        {(syncDiag.missingKeys?.length ?? 0) > 0 && ` · faltan: ${syncDiag.missingKeys.join(', ')}`}
-                      </div>
-                      <div className="sync-diag-row">Credenciales usadas: {syncDiag.usedUserCreds ? 'las tuyas' : 'las del backend'}</div>
-                      <div className="sync-diag-row">Status backend: {syncDiag.status ?? '—'}</div>
-                      {syncDiag.backendError && (
-                        <div className="sync-diag-row err">Error PPI: {syncDiag.backendError}</div>
-                      )}
-                      <div className={`sync-diag-row ${(syncDiag.totalPosiciones ?? 0) > 0 ? 'ok' : 'err'}`}>
-                        Posiciones traídas: {syncDiag.totalPosiciones ?? 0}
-                      </div>
-                    </>)}
-                  </div>
-                )}
-
-                {/* Diagnóstico de lectura — visible pre-sync */}
-                {!isDemo && readDiag && (
-                  <div className="sync-diag">
-                    <div className="sync-diag-title">
-                      <i className="ti ti-database-search" aria-hidden="true" /> Diagnóstico de lectura
-                    </div>
-                    <div className={`sync-diag-row ${(readDiag.firestoreDocs ?? 0) > 0 ? 'ok' : 'err'}`}>
-                      Docs en Firestore: {readDiag.firestoreDocs ?? '—'}
-                      {readDiag.docIds?.length ? ` (${readDiag.docIds.join(', ')})` : ''}
-                    </div>
-                    <div className={`sync-diag-row ${(readDiag.decryptedOk ?? 0) > 0 ? 'ok' : 'err'}`}>
-                      Descifrados OK: {readDiag.decryptedOk ?? 0}/{readDiag.firestoreDocs ?? 0}
-                    </div>
-                    {readDiag.decryptErrors?.length > 0 && (
-                      <div className="sync-diag-row err">Error descifrado: {readDiag.decryptErrors[0]}</div>
-                    )}
-                    {readDiag.cacheErrors?.length > 0 && (
-                      <div className="sync-diag-row err">Error cache: {readDiag.cacheErrors[0]}</div>
-                    )}
-                    <div className="sync-diag-row">Origen: {readDiag.source ?? '—'}</div>
-                    {readDiag.legacyError && (
-                      <div className="sync-diag-row err">Error legacy: {readDiag.legacyError}</div>
-                    )}
-                    <div className={`sync-diag-row ${(readDiag.positions ?? 0) > 0 ? 'ok' : 'err'}`}>
-                      Posiciones leídas: {readDiag.positions ?? 0}
-                    </div>
-                  </div>
-                )}
               </div>
             ) : (<>
             {/* ── HERO ── */}
@@ -473,66 +429,6 @@ export default function Dashboard() {
                   <i className="ti ti-wallet" aria-hidden="true" />
                   <div className="state-title">Sin posiciones</div>
                   <div className="state-desc">{isDemo ? 'Iniciá sesión para ver tu cartera real.' : 'Sincronizá con PPI (botón central) para traer tus posiciones.'}</div>
-                </div>
-              )}
-
-              {/* Diagnóstico del último sync (solo usuario real, cartera vacía post-sync) */}
-              {!isDemo && totalTickers === 0 && syncDiag && (
-                <div className="sync-diag">
-                  <div className="sync-diag-title">
-                    <i className="ti ti-stethoscope" aria-hidden="true" /> Diagnóstico de sync
-                  </div>
-                  {syncDiag.fatalError ? (
-                    <div className="sync-diag-row err">Error: {syncDiag.fatalError}</div>
-                  ) : (<>
-                    <div className={`sync-diag-row ${syncDiag.credsLoaded ? 'ok' : 'err'}`}>
-                      Credenciales en Firestore: {syncDiag.credsLoaded ? 'sí' : 'NO'}
-                    </div>
-                    {syncDiag.decryptError && (
-                      <div className="sync-diag-row err">Descifrado de credenciales: {syncDiag.decryptError}</div>
-                    )}
-                    <div className={`sync-diag-row ${(syncDiag.missingKeys?.length ?? 1) === 0 ? 'ok' : 'err'}`}>
-                      Campos presentes: {syncDiag.presentKeys?.length ?? 0}/5
-                      {(syncDiag.missingKeys?.length ?? 0) > 0 && ` · faltan: ${syncDiag.missingKeys.join(', ')}`}
-                    </div>
-                    <div className="sync-diag-row">Credenciales usadas: {syncDiag.usedUserCreds ? 'las tuyas' : 'las del backend'}</div>
-                    <div className="sync-diag-row">Status backend: {syncDiag.status ?? '—'}</div>
-                    {syncDiag.backendError && (
-                      <div className="sync-diag-row err">Error PPI: {syncDiag.backendError}</div>
-                    )}
-                    <div className={`sync-diag-row ${(syncDiag.totalPosiciones ?? 0) > 0 ? 'ok' : 'err'}`}>
-                      Posiciones traídas: {syncDiag.totalPosiciones ?? 0}
-                    </div>
-                  </>)}
-                </div>
-              )}
-
-              {/* Diagnóstico de lectura (post-sync, cartera vacía) */}
-              {!isDemo && totalTickers === 0 && readDiag && (
-                <div className="sync-diag">
-                  <div className="sync-diag-title">
-                    <i className="ti ti-database-search" aria-hidden="true" /> Diagnóstico de lectura
-                  </div>
-                  <div className={`sync-diag-row ${(readDiag.firestoreDocs ?? 0) > 0 ? 'ok' : 'err'}`}>
-                    Docs en Firestore: {readDiag.firestoreDocs ?? '—'}
-                    {readDiag.docIds?.length ? ` (${readDiag.docIds.join(', ')})` : ''}
-                  </div>
-                  <div className={`sync-diag-row ${(readDiag.decryptedOk ?? 0) > 0 ? 'ok' : 'err'}`}>
-                    Descifrados OK: {readDiag.decryptedOk ?? 0}/{readDiag.firestoreDocs ?? 0}
-                  </div>
-                  {readDiag.decryptErrors?.length > 0 && (
-                    <div className="sync-diag-row err">Error descifrado: {readDiag.decryptErrors[0]}</div>
-                  )}
-                  {readDiag.cacheErrors?.length > 0 && (
-                    <div className="sync-diag-row err">Error cache: {readDiag.cacheErrors[0]}</div>
-                  )}
-                  <div className="sync-diag-row">Origen: {readDiag.source ?? '—'}</div>
-                  {readDiag.legacyError && (
-                    <div className="sync-diag-row err">Error legacy: {readDiag.legacyError}</div>
-                  )}
-                  <div className={`sync-diag-row ${(readDiag.positions ?? 0) > 0 ? 'ok' : 'err'}`}>
-                    Posiciones leídas: {readDiag.positions ?? 0}
-                  </div>
                 </div>
               )}
 

@@ -1,7 +1,7 @@
-import { collection, doc, getDocs, onSnapshot, setDoc } from 'firebase/firestore'
+import { collection, getDocs, onSnapshot } from 'firebase/firestore'
 import { db } from './firebase'
-import { apiPost } from './apiClient'
-import { decryptPayload, encryptPayload } from './fernet'
+import { apiGet, apiPost } from './apiClient'
+import { decryptPayload } from './fernet'
 import { readLocalPortfolio, saveLocalDocument } from './localPortfolioStore'
 import { recordDailySnapshot } from './portfolioHistory'
 
@@ -78,6 +78,31 @@ async function buildPortfolio(uid, decrypted) {
   return { ...cached, ...decrypted }
 }
 
+// SEC-2 · F2 — Lectura server-side. El backend descifra el portfolio con la DEK de sesión
+// (POST /api/session/unlock) y devuelve el portfolio EN CLARO. El front ya no lee el
+// ciphertext de Firestore ni descifra con Fernet JS para el camino primario.
+// Se cachea el plano en el store local (offline-first) best-effort.
+//
+// Coexistencia transicional: si el backend no está disponible o la sesión está bloqueada,
+// el caller cae al camino legacy (pullPortfolioFromFirestore, que sí usa la DEK local).
+export async function fetchPortfolioFromBackend(uid) {
+  const data = await apiGet('/api/portfolio')   // { acciones_ar: {...}, ..., liquidez: {...} }
+  _lastReadDiag = { source: 'backend-dek', firestoreDocs: 0, decryptedOk: 0, decryptErrors: [], cacheErrors: [] }
+  // Cachear cada categoría en el store local (best-effort): un fallo de cache no rompe la lectura.
+  for (const cat of CATEGORIES) {
+    const catData = data?.[cat]
+    if (!catData) continue
+    try {
+      await cachePlainPortfolioDoc(uid, cat, catData)
+    } catch (err) {
+      _lastReadDiag.cacheErrors.push(`${cat}: ${err?.message || err}`)
+    }
+  }
+  return data
+}
+
+// LEGACY (transición) — lectura directa del ciphertext de Firestore + descifrado local con
+// la DEK del usuario. Fallback cuando GET /api/portfolio no está disponible. Se elimina en F3.
 export async function pullPortfolioFromFirestore(uid) {
   const snap = await getDocs(collection(db, 'users', uid, 'portfolio'))
   const diag = {
@@ -117,22 +142,28 @@ export async function readCachedPortfolio(uid) {
   return readLocalPortfolio(uid)
 }
 
-export async function persistBrokerPortfolio(uid, portfolio) {
+// SEC-2 · F1 — El BACKEND ya escribió el portfolio cifrado (DEK de sesión) en Firestore.
+// El front solo cachea el plano en el store local (offline-first). YA NO cifra con Fernet JS
+// ni escribe ciphertext en Firestore (eso lo hacía el front antes; ahora lo hace el backend).
+export async function cacheBrokerPortfolioLocally(uid, portfolio) {
   await Promise.all(CATEGORIES.map(async cat => {
     const data = portfolio[cat]
     if (!data) return
-    const encrypted = await encryptPayload(data)
-    await setDoc(doc(db, 'users', uid, 'portfolio', cat), encrypted)
-    await cachePlainPortfolioDoc(uid, cat, data)
+    try {
+      await cachePlainPortfolioDoc(uid, cat, data)
+    } catch (err) {
+      console.warn(`[portfolioSync] cache local falló para ${cat} (no fatal):`, err?.message || err)
+    }
   }))
 }
 
 const BROKER_CRED_KEYS = ['authorized_client', 'client_key', 'api_key', 'api_secret', 'account_number']
 
 export async function syncBrokerPortfolioToDevice(uid) {
-  // SEC-1 F2: el front YA NO descifra ni manda las credenciales del broker. Antes mandaba
-  // `broker_credentials` en el body (visibles en F12/Network). Ahora el BACKEND las descifra
-  // server-side con la DEK desbloqueada vía /api/session/unlock y devuelve el portfolio.
+  // SEC-2 F1: el BACKEND descifra las credenciales del broker server-side (DEK desbloqueada
+  // vía /api/session/unlock), llama al broker, construye el portfolio, lo CIFRA con la DEK de
+  // sesión y lo ESCRIBE en Firestore. Devuelve el portfolio en claro para cachearlo localmente.
+  // El front ya no manda creds ni escribe ciphertext.
   const result = await apiPost('/api/portfolio/sync-source', null)
 
   // Diagnóstico (sin tocar creds en el front): las gestiona el backend.
@@ -149,7 +180,7 @@ export async function syncBrokerPortfolioToDevice(uid) {
   }
 
   if (result?.portfolio) {
-    await persistBrokerPortfolio(uid, result.portfolio)
+    await cacheBrokerPortfolioLocally(uid, result.portfolio)
     // Snapshot diario para el rendimiento 30d (device-owned, cifrado con la DEK).
     await recordDailySnapshot(uid, computeTotalARS(result.portfolio))
   }

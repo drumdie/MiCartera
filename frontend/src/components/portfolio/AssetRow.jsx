@@ -54,10 +54,14 @@ export default function AssetRow({ position, expanded, onToggle, isCedear, isBon
     ? (isMEPmode ? formatUSD(rentaCobrada) : formatARS(rentaCobrada))
     : null
 
-  // Ganancia/pérdida absoluta en la moneda activa
-  const ganancia = isMEPmode
-    ? (position.ganancia_usd_mep != null ? formatUSD(position.ganancia_usd_mep) : null)
-    : (position.ganancia_ars     != null ? formatARS(position.ganancia_ars)     : null)
+  // Ganancia/pérdida absoluta en la moneda activa. Usa el G/P TOTAL (precio + renta cobrada)
+  // para que el monto sea coherente con rendTotal; fallback a solo-precio si no hay total.
+  const gananciaVal = isMEPmode
+    ? (position.ganancia_total_usd ?? position.ganancia_usd_mep ?? null)
+    : (position.ganancia_total_ars ?? position.ganancia_ars     ?? null)
+  const ganancia = gananciaVal != null
+    ? (isMEPmode ? formatUSD(gananciaVal) : formatARS(gananciaVal))
+    : null
 
   return (
     <div className={`ticker-row ${expanded ? 'expanded' : ''}`} onClick={onToggle}>
@@ -168,7 +172,7 @@ export default function AssetRow({ position, expanded, onToggle, isCedear, isBon
           {ganancia && (
             <div>
               <div className="tg-label">Ganancia {curLabel}</div>
-              <div className={`tg-val ${(isMEPmode ? position.ganancia_usd_mep : position.ganancia_ars) >= 0 ? 'pos' : 'neg'}`}>
+              <div className={`tg-val ${(gananciaVal ?? 0) >= 0 ? 'pos' : 'neg'}`}>
                 <PrivacyMask>{ganancia}</PrivacyMask>
               </div>
             </div>

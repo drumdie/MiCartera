@@ -12,14 +12,16 @@ export default function GpDetail() {
   const navigate = useNavigate()
   const { portfolio, resumen } = useApp()
 
-  // Posiciones con ganancia USD MEP atribuida, ordenadas de mayor aporte a mayor pérdida.
+  // Posiciones con G/P USD MEP atribuida, ordenadas de mayor aporte a mayor pérdida.
+  // Usa el G/P TOTAL (precio + renta cobrada); fallback a solo-precio para datos viejos.
+  const gpUsd = (p) => p.ganancia_total_usd ?? p.ganancia_usd_mep ?? 0
   const posiciones = []
   for (const key of ['acciones_ar', 'cedears', 'bonos', 'ons', 'fci']) {
     for (const p of portfolio?.[key]?.posiciones ?? []) {
       if (p.ticker && p.ganancia_usd_mep != null) posiciones.push({ ...p, _cat: key })
     }
   }
-  posiciones.sort((a, b) => (b.ganancia_usd_mep ?? 0) - (a.ganancia_usd_mep ?? 0))
+  posiciones.sort((a, b) => gpUsd(b) - gpUsd(a))
 
   const gpTotal = resumen?.ganancia_total_usd ?? null
   const gpPos = (gpTotal ?? 0) >= 0
@@ -46,9 +48,9 @@ export default function GpDetail() {
       ) : (
         <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
           {posiciones.map((p) => {
-            const g = p.ganancia_usd_mep ?? 0
+            const g = gpUsd(p)
             const pos = g >= 0
-            const rend = p.rend_usd_pct ?? p.rend_total_usd_pct
+            const rend = p.rend_total_usd_pct ?? p.rend_usd_pct
             return (
               <button key={p.ticker} className="list-row" onClick={() => goFundamental(p.ticker)}>
                 <div className="list-row-ic" style={{ color: pos ? 'var(--buy)' : 'var(--red)' }}>
