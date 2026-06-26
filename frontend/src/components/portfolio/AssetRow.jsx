@@ -75,10 +75,11 @@ export default function AssetRow({ position, expanded, onToggle, isCedear, isBon
         <div className={`tr-bar ${barCls}`} />
         <div className="tr-left">
           <div className="tr-ticker">{position.ticker}</div>
-          <div className="tr-name">
-            {position.descripcion}
-            {position.cantidad != null && ` · ${position.cantidad} ${isCedear ? 'cert.' : isBono || isON ? 'VN' : isFCI ? 'CP' : 'acc.'}`}
-            {position.pct_cartera != null && ` · ${position.pct_cartera.toFixed(1).replace('.', ',')}% cartera`}
+          <div className="tr-name">{position.descripcion}</div>
+          <div className="tr-meta">
+            {position.cantidad != null && `${position.cantidad} ${isCedear ? 'cert.' : isBono || isON ? 'VN' : isFCI ? 'CP' : 'acc.'}`}
+            {position.cantidad != null && position.pct_cartera != null && ' · '}
+            {position.pct_cartera != null && `${position.pct_cartera.toFixed(1).replace('.', ',')}% cartera`}
           </div>
         </div>
         <div className="tr-mid">

@@ -121,7 +121,8 @@ body::before {
 
 .tr-left { flex: 1; min-width: 0; }
 .tr-ticker { font-family: 'Syne', sans-serif; font-size: 14px; font-weight: 800; color: #fff; letter-spacing: -.01em; line-height: 1; }
-.tr-name { font-size: 9px; color: var(--muted); margin-top: 2px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.tr-name { font-size: 9px; color: var(--muted); margin-top: 2px; line-height: 1.25; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; overflow-wrap: anywhere; }
+.tr-meta { font-size: 9px; color: var(--muted); margin-top: 2px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; opacity: .85; }
 .tr-mid { text-align: right; flex-shrink: 0; }
 .tr-rend { font-family: 'IBM Plex Mono', monospace; font-size: 12px; font-weight: 600; }
 .tr-rend.pos { color: var(--buy); }
