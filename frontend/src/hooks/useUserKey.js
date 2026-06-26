@@ -53,10 +53,14 @@ export function useUserKey(user) {
   const markReady = useCallback(() => setKeyState('ready'), [])
 
   const unlock = useCallback(async (passphrase) => {
+    // SEC-2: desbloquear la sesión backend ANTES de exponer la DEK local. unlockWithPassphrase
+    // setea la DEK → dispara onDEKChange → el auto-sync de AppContext; como sync-source ahora
+    // EXIGE la sesión backend (401 needs_unlock si no), el backend tiene que estar listo primero.
+    // Además deja la passphrase en RAM (F5) por si el TTL vence después. Best-effort: si falla
+    // (red/cold-start) seguimos al unlock local; F5 reintenta el sync cuando vuelva.
+    try { await unlockBackendSession(passphrase) } catch { /* best-effort; F5 cubre el resto */ }
     await unlockWithPassphrase(user.uid, passphrase)
     setKeyState('ready')
-    // SEC-1: desbloquear también la sesión backend con la misma passphrase (best-effort).
-    try { await unlockBackendSession(passphrase) } catch { /* best-effort */ }
   }, [user])
 
   const recover = useCallback(async (recoveryCode, newPassphrase) => {

@@ -13,8 +13,9 @@ export default function GpDetail() {
   const { portfolio, resumen } = useApp()
 
   // Posiciones con G/P USD MEP atribuida, ordenadas de mayor aporte a mayor pérdida.
-  // Usa el G/P TOTAL (precio + renta cobrada); fallback a solo-precio para datos viejos.
-  const gpUsd = (p) => p.ganancia_total_usd ?? p.ganancia_usd_mep ?? 0
+  // G/P TOTAL = precio + renta cobrada, calculado en el front con campos presentes (robusto
+  // a datos viejos que no traen ganancia_total_usd del backend).
+  const gpUsd = (p) => (p.ganancia_usd_mep ?? 0) + (p.renta_cobrada_usd ?? 0)
   const posiciones = []
   for (const key of ['acciones_ar', 'cedears', 'bonos', 'ons', 'fci']) {
     for (const p of portfolio?.[key]?.posiciones ?? []) {

@@ -87,11 +87,14 @@ function computeResumen(portfolio) {
 
   // Rendimiento total desde precio de compra — agregado de todas las categorías
   // (excluye liquidez, que no tiene costo promedio)
-  // G/P TOTAL = precio + renta cobrada (cupones/amortizaciones/dividendos). El backend expone
-  // ganancia_total_* por categoría; fallback a solo-precio para datos viejos sin ese campo.
+  // G/P TOTAL = G/P de precio + renta cobrada (cupones/amortizaciones/dividendos). Se calcula
+  // sumando la renta por posición (campos presentes), en vez de depender de ganancia_total_*
+  // del backend → robusto aunque los datos sincronizados sean viejos.
   const cats = [portfolio.acciones_ar, portfolio.cedears, portfolio.bonos, portfolio.ons, portfolio.fci]
-  const totalGananciaARS = cats.reduce((s, c) => s + (c.ganancia_total_ars ?? c.ganancia_ars     ?? 0), 0)
-  const totalGananciaUSD = cats.reduce((s, c) => s + (c.ganancia_total_usd ?? c.ganancia_usd_mep ?? 0), 0)
+  const sumRenta = (key) => cats.reduce((s, c) =>
+    s + (c.posiciones ?? []).reduce((ss, p) => ss + (p[key] ?? 0), 0), 0)
+  const totalGananciaARS = cats.reduce((s, c) => s + (c.ganancia_ars     ?? 0), 0) + sumRenta('renta_cobrada_ars')
+  const totalGananciaUSD = cats.reduce((s, c) => s + (c.ganancia_usd_mep ?? 0), 0) + sumRenta('renta_cobrada_usd')
   const totalCostoARS    = cats.reduce((s, c) => s + (c.costo_total_ars  ?? 0), 0)
 
   // null cuando no hay costo de compra (primer sync sin avg_costs calculados)

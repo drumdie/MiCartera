@@ -39,26 +39,32 @@ export default function AssetRow({ position, expanded, onToggle, isCedear, isBon
   })()
   const isDiaPos = rendDia == null || rendDia >= 0
 
-  // Rendimiento histórico desde compra → panel expandido, sigue toggle de moneda
-  const rendHist      = getRend(position)
-  const rendHistLabel = isMEPmode ? 'Rend. Histórico USD' : 'Rend. Histórico ARS'
-
-  // Renta cobrada (cupones + amortizaciones + dividendos) y rendimiento TOTAL
-  // (precio + renta). Solo se muestra cuando el backend la atribuyó (bonos/ONs y
-  // acciones con dividendos). Sigue el toggle: USD en modo MEP/CCL, ARS si no.
+  // Renta cobrada (cupones + amortizaciones + dividendos). Sigue el toggle: USD en MEP/CCL.
   const rentaCobrada = isMEPmode ? position.renta_cobrada_usd : position.renta_cobrada_ars
-  const rendTotal    = isMEPmode
-    ? (position.rend_total_usd_pct ?? position.rend_total_ars_pct ?? null)
-    : (position.rend_total_ars_pct ?? null)
+  const hasRenta = rentaCobrada != null && rentaCobrada !== 0
   const rentaCobradaFmt = rentaCobrada != null
     ? (isMEPmode ? formatUSD(rentaCobrada) : formatARS(rentaCobrada))
     : null
 
-  // Ganancia/pérdida absoluta en la moneda activa. Usa el G/P TOTAL (precio + renta cobrada)
-  // para que el monto sea coherente con rendTotal; fallback a solo-precio si no hay total.
-  const gananciaVal = isMEPmode
-    ? (position.ganancia_total_usd ?? position.ganancia_usd_mep ?? null)
-    : (position.ganancia_total_ars ?? position.ganancia_ars     ?? null)
+  // Rendimiento histórico de PRECIO (sin renta). En bonos/ONs con renta se renombra a
+  // "Var. precio": el precio cae al amortizar, así que como "rendimiento" engaña.
+  const rendHist      = getRend(position)
+  const rendHistLabel = hasRenta
+    ? `Var. precio ${curLabel}`
+    : (isMEPmode ? 'Rend. Histórico USD' : 'Rend. Histórico ARS')
+
+  // Rendimiento TOTAL = precio + renta (campo del backend; es el rend. real del bono).
+  const rendTotal = isMEPmode
+    ? (position.rend_total_usd_pct ?? position.rend_total_ars_pct ?? null)
+    : (position.rend_total_ars_pct ?? null)
+
+  // G/P absoluta en la moneda activa = G/P de precio + renta cobrada. Se calcula en el front
+  // sumando la renta (campos presentes) en vez de depender de ganancia_total_* del backend,
+  // que puede faltar en datos viejos. Sin renta, es simplemente el G/P de precio.
+  const gananciaPrecio = isMEPmode ? position.ganancia_usd_mep : position.ganancia_ars
+  const gananciaVal = gananciaPrecio == null
+    ? null
+    : (hasRenta ? gananciaPrecio + rentaCobrada : gananciaPrecio)
   const ganancia = gananciaVal != null
     ? (isMEPmode ? formatUSD(gananciaVal) : formatARS(gananciaVal))
     : null
@@ -171,7 +177,7 @@ export default function AssetRow({ position, expanded, onToggle, isCedear, isBon
           {/* Ganancia / Pérdida absoluta */}
           {ganancia && (
             <div>
-              <div className="tg-label">Ganancia {curLabel}</div>
+              <div className="tg-label">{hasRenta ? `Ganancia total ${curLabel}` : `Ganancia ${curLabel}`}</div>
               <div className={`tg-val ${(gananciaVal ?? 0) >= 0 ? 'pos' : 'neg'}`}>
                 <PrivacyMask>{ganancia}</PrivacyMask>
               </div>
