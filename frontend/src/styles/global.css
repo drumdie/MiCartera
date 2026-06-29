@@ -86,6 +86,11 @@ body::before {
 .donut-label-pct { font-family: 'IBM Plex Mono', monospace; font-size: 11px; font-weight: 600; color: #fff; }
 .donut-label-name { font-size: 9px; color: var(--muted2); }
 
+/* Web only: la caja de distribución mantiene SIEMPRE el alto del layout
+   "Instrumento" (hasta 6 filas de leyenda). Al togglear a "Moneda" (2 filas)
+   no se achica. Scopeado a .app:not(.app-m) para no tocar la APK. */
+.app:not(.app-m) .dist-donut-row { min-height: 120px; }
+
 /* ── KPIs MINI ── */
 .kpis-mini { display: grid; grid-template-columns: repeat(2, 1fr); gap: 8px; padding: 0 16px; margin-bottom: 10px; }
 .kpi { position: relative; background: var(--surface); border: 1px solid var(--border); border-radius: 10px; padding: 11px 13px; }
@@ -95,6 +100,58 @@ body::before {
 .kpi-val.neg { color: var(--red); }
 .kpi-val.warn { color: var(--warn); }
 .kpi-sub { font-size: 9px; color: var(--muted); margin-top: 2px; }
+
+/* ── KPI DETAIL PANEL (web) ──────────────────────────────────────────────
+   Reemplaza inline toda la zona de KPIs cuando se clickea una card. */
+.kpis-mini-zone { padding: 0 16px; margin-bottom: 10px; }
+.kpi-detail-panel { background: var(--surface); border: 1px solid var(--border); border-radius: 12px; padding: 12px 14px; }
+.kpidp-head { display: flex; align-items: center; gap: 10px; margin-bottom: 10px; padding-bottom: 10px; border-bottom: 1px solid var(--border); }
+.kpidp-back { background: var(--surface2); border: 1px solid var(--border); color: var(--text); font-family: 'DM Mono', monospace; font-size: 11px; padding: 5px 10px; border-radius: 7px; cursor: pointer; transition: border-color .2s, background .15s; flex-shrink: 0; }
+.kpidp-back:hover { border-color: var(--border2); background: var(--surface3); }
+.kpidp-title { font-family: 'Syne', sans-serif; font-size: 12px; font-weight: 600; letter-spacing: .04em; color: #fff; }
+.kpidp-sub { font-size: 10px; color: var(--muted); margin-bottom: 10px; letter-spacing: .02em; }
+.kpidp-empty { font-size: 12px; color: var(--muted); text-align: center; padding: 24px 8px; line-height: 1.5; }
+.kpidp-list { display: flex; flex-direction: column; gap: 8px; }
+
+/* Resumen total (G/P, liquidez) */
+.kpidp-total { background: var(--surface2); border: 1px solid var(--border); border-radius: 10px; padding: 12px 14px; margin-bottom: 12px; }
+.kpidp-total-label { font-size: 10px; color: var(--muted); text-transform: uppercase; letter-spacing: .08em; margin-bottom: 5px; }
+.kpidp-total-val { font-family: 'IBM Plex Mono', monospace; font-size: 22px; font-weight: 700; line-height: 1.1; }
+.kpidp-total-sub { font-size: 11px; color: var(--muted); margin-top: 3px; }
+
+/* Filas de posición */
+.kpidp-row { display: flex; align-items: center; gap: 10px; background: var(--surface2); border: 1px solid var(--border); border-radius: 10px; padding: 10px 12px; }
+.kpidp-rank { font-family: 'IBM Plex Mono', monospace; font-size: 13px; font-weight: 700; color: var(--muted); width: 18px; text-align: center; flex-shrink: 0; }
+.kpidp-row-ic { font-size: 12px; flex-shrink: 0; width: 18px; text-align: center; }
+.kpidp-row-main { flex: 1; min-width: 0; }
+.kpidp-ticker { font-family: 'IBM Plex Mono', monospace; font-size: 14px; font-weight: 700; color: #fff; }
+.kpidp-row-sub { font-size: 10px; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.kpidp-row-right { text-align: right; flex-shrink: 0; }
+.kpidp-val { font-family: 'IBM Plex Mono', monospace; font-size: 14px; font-weight: 600; color: #fff; }
+.kpidp-bar { height: 4px; background: var(--surface3); border-radius: 99px; overflow: hidden; margin-top: 6px; }
+.kpidp-bar span { display: block; height: 100%; background: var(--accent); border-radius: 99px; }
+
+/* Posiciones por categoría */
+.kpidp-group { background: var(--surface2); border: 1px solid var(--border); border-radius: 10px; padding: 11px 12px; }
+.kpidp-group-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-bottom: 8px; }
+.kpidp-group-name { font-family: 'Syne', sans-serif; font-size: 12px; font-weight: 700; color: #fff; }
+.kpidp-group-meta { text-align: right; }
+.kpidp-group-pct { font-family: 'IBM Plex Mono', monospace; font-size: 13px; color: var(--accent); }
+.kpidp-group-usd { display: block; font-size: 10px; color: var(--muted); }
+.kpidp-chips { display: flex; flex-direction: column; gap: 6px; margin-top: 8px; }
+.kpidp-chip { display: flex; align-items: center; gap: 8px; background: var(--surface); border: 1px solid var(--border); border-radius: 7px; padding: 7px 9px; }
+.kpidp-chip-desc { flex: 1; min-width: 0; font-size: 10px; color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.kpidp-chip-pct { font-family: 'IBM Plex Mono', monospace; font-size: 11px; color: var(--text); flex-shrink: 0; }
+
+/* Filas de tasa (riesgo país, liquidez por especie) */
+.kpidp-rate-block { background: var(--surface2); border: 1px solid var(--border); border-radius: 10px; padding: 4px 14px 6px; }
+.kpidp-rate-cap { font-size: 10px; color: var(--muted); text-transform: uppercase; letter-spacing: .1em; padding: 10px 0 2px; }
+.kpidp-rate-row { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 11px 0; border-bottom: 1px solid var(--border); }
+.kpidp-rate-row:last-child { border-bottom: none; }
+.kpidp-rate-label { font-family: 'Syne', sans-serif; font-size: 12px; font-weight: 600; color: #fff; }
+.kpidp-rate-sub { font-size: 10px; color: var(--muted); margin-top: 2px; font-family: inherit; font-weight: 400; }
+.kpidp-rate-val { font-family: 'IBM Plex Mono', monospace; font-size: 16px; font-weight: 700; color: var(--text); }
+.kpidp-note { display: flex; gap: 8px; margin-top: 10px; font-size: 11px; color: var(--muted); line-height: 1.45; background: var(--surface2); border: 1px solid var(--border); border-radius: 8px; padding: 10px 12px; }
 
 /* ── TABS ── */
 .tabs-bar { position: sticky; top: 0; z-index: 100; background: var(--bg); border-bottom: 1px solid var(--border); padding: 0 12px; display: flex; margin-bottom: 16px; }
@@ -325,3 +382,20 @@ footer { padding: 20px 16px; font-size: 9px; color: var(--muted); text-align: ce
 .d2 { animation-delay: .1s;  }
 .d3 { animation-delay: .15s; }
 .d4 { animation-delay: .2s;  }
+
+/* ── PANTALLA "ACTUALIZANDO CARTERA" (primer sync · Opción B donut) ── */
+.syncing-screen { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 12px; padding: 52px 0 56px; text-align: center; }
+.syncing-donut-pulse { animation: sd-pulse 1.6s ease-in-out infinite; }
+@keyframes sd-pulse { 0%,100% { opacity: .6; transform: scale(.97); } 50% { opacity: 1; transform: scale(1); } }
+.syncing-donut { transform: rotate(-90deg); }
+.sd-track { fill: none; stroke: var(--surface2, #1b2025); stroke-width: 9; }
+.sd-arc { fill: none; stroke-width: 9; stroke-linecap: round; stroke-dasharray: 34 220; animation: sd-spin 1.4s linear infinite; }
+.sd-1 { stroke: #00e5a0; }
+.sd-2 { stroke: #4a9eff; animation-delay: -.46s; opacity: .85; }
+.sd-3 { stroke: #f7b731; animation-delay: -.93s; opacity: .65; }
+@keyframes sd-spin { to { stroke-dashoffset: -254; } }
+.syncing-title { font-family: 'DM Mono', monospace; font-size: 15px; color: var(--text, #fff); letter-spacing: .02em; }
+.syncing-sub { font-size: 11px; color: var(--muted, #7e8a90); }
+.syncing-legend { display: flex; gap: 14px; justify-content: center; margin-top: 4px; }
+.syncing-leg { display: flex; align-items: center; gap: 5px; font-size: 10px; color: var(--muted, #7e8a90); }
+.syncing-sw { width: 8px; height: 8px; border-radius: 50%; }

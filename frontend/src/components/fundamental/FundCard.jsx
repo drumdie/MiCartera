@@ -38,6 +38,8 @@ export default function FundCard({ position }) {
     analisis_extendido, fuentes = [],
     // TradingView
     tv_symbol,
+    // Fecha del análisis de Claude (cuándo se hizo)
+    ultima_analisis,
   } = position
 
   const sentClass = SENT_CLASS[sentimiento] ?? 'neutral'
@@ -64,6 +66,11 @@ export default function FundCard({ position }) {
         <div>
           <div className="fc-ticker">{ticker}</div>
           <div className="fc-name">{descripcion}</div>
+          {ultima_analisis && (
+            <div style={{ fontSize: 9, color: 'var(--muted)', marginTop: 2 }}>
+              Análisis del {new Date(ultima_analisis).toLocaleDateString('es-AR')}
+            </div>
+          )}
         </div>
         <TacticalBadge accion={accion_tactica} />
       </div>

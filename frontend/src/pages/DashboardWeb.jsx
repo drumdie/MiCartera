@@ -22,6 +22,9 @@ import FundCard        from '../components/fundamental/FundCard'
 import CatalystItem    from '../components/catalysts/CatalystItem'
 import CopyContextBtn  from '../components/claude-tools/CopyContextBtn'
 import PasteResultArea from '../components/claude-tools/PasteResultArea'
+import SyncingScreen   from '../components/ui/SyncingScreen'
+import RefreshAndCopyFundamental from '../components/claude-tools/RefreshAndCopyFundamental'
+import KpiDetailPanel  from '../components/KpiDetailPanel'
 
 const TABS = [
   { id: 'posiciones',    label: 'Posiciones'   },
@@ -44,10 +47,11 @@ export default function Dashboard() {
           cotizaciones, resumen, portfolio,
           catalizadores, stressTest, fundamental,
           lastSync, rend30d,
-          refreshFundamentals, isDemo, hasFreshData, user } = useApp()
+          refreshFundamentals, isDemo, hasFreshData, syncing, user } = useApp()
   const { privacyOn, toggle: togglePrivacy } = usePrivacy()
 
   const [activeTab,        setActiveTab]        = useState('posiciones')
+  const [selectedKpi,      setSelectedKpi]      = useState(null)
   const [selectedTicker,   setSelectedTicker]   = useState(null)
   const [modalOpen,        setModalOpen]        = useState(false)
   const [toastMsg,         setToastMsg]         = useState('')
@@ -293,12 +297,16 @@ export default function Dashboard() {
       <DemoBanner />
 
       {!hasFreshData ? (
+        syncing ? (
+          <SyncingScreen />
+        ) : (
         /* ── Estado pre-sync: sin datos frescos ── */
         <div style={{ textAlign: 'center', color: 'var(--text-muted, #888)', padding: '60px 16px' }}>
           <div style={{ fontSize: 40, marginBottom: 12, opacity: 0.5 }}>&#x21bb;</div>
           <div style={{ fontSize: 18, fontWeight: 600, marginBottom: 8 }}>Sin sincronizar</div>
           <div>Sincronizá con PPI para ver tu cartera actualizada.</div>
         </div>
+        )
       ) : (<>
       {/* ── HERO ── */}
       <div className="hero-block fade-in d1">
@@ -346,17 +354,26 @@ export default function Dashboard() {
       </div>
 
       {/* ── KPIs ── */}
+      {/* Al clickear una card, toda la zona se transforma en un panel de detalle
+          inline (web-native, sin navegación). "← Volver" regresa a la grilla. */}
+      {selectedKpi ? (
+        <div className="kpis-mini-zone fade-in d2">
+          <KpiDetailPanel kpiId={selectedKpi} onBack={() => setSelectedKpi(null)} />
+        </div>
+      ) : (
       <div className="kpis-mini fade-in d2">
         <KPICard
           label="Liquidez"
           value={`${liqPct.toFixed(2).replace('.', ',')}%`}
           sub={<PrivacyMask>≈ USD {liqUSD.toLocaleString('es-AR')} · ARS {Math.round(liqARS / 1000)}K</PrivacyMask>}
           className="warn"
+          onClick={() => setSelectedKpi('liquidez')}
         />
         <KPICard
           label="Posiciones"
           value={String(totalTickers + portfolio.liquidez.detalle.length)}
           sub={`5 categorías · ${totalTickers} tickers`}
+          onClick={() => setSelectedKpi('posiciones')}
         />
 
         {/* Mayor posición: ticker con mayor valor corriente en ARS */}
@@ -368,6 +385,7 @@ export default function Dashboard() {
           sub={mayorPos
             ? `${mayorPosPct.toFixed(1).replace('.', ',')}% del portafolio`
             : 'sin posiciones'}
+          onClick={() => setSelectedKpi('mayor_posicion')}
         />
 
         {/* G/P total USD: ganancia/pérdida acumulada en dólares MEP */}
@@ -380,6 +398,7 @@ export default function Dashboard() {
             ? <PrivacyMask>sobre US$ {invertidoUSD.toLocaleString('es-AR')} invertidos</PrivacyMask>
             : 'sin datos de costo'}
           className={gpUSD != null ? (gpUSDPos ? 'pos' : 'neg') : ''}
+          onClick={() => setSelectedKpi('gp')}
         />
 
         {/* Riesgo país en puntos básicos (dato de /market/cotizaciones) */}
@@ -392,8 +411,10 @@ export default function Dashboard() {
             ? `mín desde ${riesgoPaisMinDesde}`
             : undefined}
           className={riesgoPaisEsMin ? 'pos' : ''}
+          onClick={() => setSelectedKpi('riesgo_pais')}
         />
       </div>
+      )}
 
       {/* ── TABS ── */}
       <div className="tabs-bar fade-in d2">
@@ -422,37 +443,16 @@ export default function Dashboard() {
         </div>
 
         <LiquidezBlock liquidez={portfolio.liquidez} />
-
-        <div className="sec-title fade-in">Herramientas Claude</div>
-        <div className="action-btns fade-in">
-          <CopyContextBtn tipo="tactico"     onToast={showToast} />
-          <PasteResultArea id="paste-tac" label="Pegar resultado táctico" sub="Cargá el JSON de respuesta de Claude" onLoad={() => showToast('✓ Resultado cargado')} />
-        </div>
+        {/* Táctico-simple eliminado: el único análisis táctico es el "por CP" en Perfil de Inversión. */}
       </div>
 
       {/* ── TAB: FUNDAMENTAL ── */}
       <div className={`tab-content ${activeTab === 'fundamental' ? 'active' : ''}`}>
 
-        {/* Botón actualizar métricas yfinance */}
-        <div className="action-btns fade-in" style={{ marginTop: 12 }}>
-          <button
-            className="action-btn"
-            onClick={handleRefreshFundamentals}
-            disabled={fundRefreshing}
-          >
-            <span className="ab-icon">{fundRefreshing ? '⏳' : '📊'}</span>
-            <div className="ab-text">
-              <div className="ab-title">{fundRefreshing ? 'Actualizando…' : 'Actualizar fundamentales'}</div>
-              <div className="ab-sub">Fetcha P/E, EV/EBITDA, márgenes desde Yahoo Finance</div>
-            </div>
-            <span className="ab-arrow">→</span>
-          </button>
-        </div>
-
         {/* Cards por sector — solo si hay datos */}
         {fundamental.length === 0 ? (
           <div style={{ textAlign: 'center', color: 'var(--text-muted, #888)', padding: '40px 16px' }}>
-            Sin datos fundamentales. Presioná "Actualizar fundamentales" para cargar métricas reales.
+            Sin datos fundamentales. Usá el "Paso 1" (abajo) para traer las métricas de Yahoo y copiar el prompt.
           </div>
         ) : (
           fundamental.map(sector => (
@@ -468,10 +468,10 @@ export default function Dashboard() {
         {/* Herramientas Claude */}
         <div className="sec-title" style={{ marginTop: 20 }}>Análisis Claude</div>
         <div className="action-btns">
-          <CopyContextBtn tipo="fundamental" onToast={showToast} />
+          <RefreshAndCopyFundamental onToast={showToast} />
           <PasteResultArea
             id="paste-fund"
-            label="Pegar análisis fundamental"
+            label="Paso 2 · Pegar análisis"
             sub="Pegá el JSON de Claude — guarda tesis, escenarios y acción táctica"
             onLoad={handleFundAnalysisLoad}
           />

@@ -4,6 +4,7 @@ import {
   onSnapshotCotizaciones,
   onSnapshotCatalysts,
   onSnapshotFundamentals,
+  onSnapshotRankingTactico,
 } from '../services/portfolioService'
 import { apiGet } from '../services/apiClient'
 import {
@@ -185,6 +186,7 @@ export function usePortfolio(uid) {
   const [stressTest,        setStressTest]        = useState(MOCK_STRESS_TEST)
   const [portfolioHistory,  setPortfolioHistory]  = useState({})
   const [rawFundamentals,   setRawFundamentals]   = useState({})
+  const [rankingTactico,    setRankingTactico]    = useState([])
   const [loading,           setLoading]           = useState(true)
   const [readDiag,          setReadDiag]          = useState(null)
 
@@ -300,6 +302,13 @@ export function usePortfolio(uid) {
     return onSnapshotFundamentals(uid, setRawFundamentals)
   }, [uid])
 
+  // Ranking táctico (output del análisis por CP): de acá sale el badge táctico de cada
+  // posición + la fecha del análisis. El fundamental ya NO define la acción.
+  useEffect(() => {
+    if (!uid) return
+    return onSnapshotRankingTactico(uid, (items) => setRankingTactico(items ?? []))
+  }, [uid])
+
   // Stress test desde el backend — se puede refrescar manualmente con refreshStress()
   const fetchStress = useCallback(async () => {
     if (!uid) return
@@ -322,20 +331,23 @@ export function usePortfolio(uid) {
     const base = computePortfolio(rawPortfolio, cotizaciones)
     if (!base) return base
 
-    const funds = Object.values(rawFundamentals)
-    if (funds.length === 0) return base
-
     const byTicker = {}
-    for (const f of funds) byTicker[f.ticker] = f
+    for (const f of Object.values(rawFundamentals)) byTicker[f.ticker] = f
+    // Badge táctico desde el CP (ranking táctico): { ticker: accion }. El fundamental queda
+    // SOLO de fallback legacy (ya no define la acción).
+    const accionByTicker = {}
+    for (const r of (rankingTactico ?? [])) if (r?.ticker && r?.accion) accionByTicker[r.ticker] = r.accion
+
+    if (Object.keys(byTicker).length === 0 && Object.keys(accionByTicker).length === 0) return base
 
     const enrich = (cat) => ({
       ...cat,
       posiciones: (cat.posiciones ?? []).map(p => {
         const f = byTicker[p.ticker]
-        if (!f) return p
+        const accion = accionByTicker[p.ticker] ?? p.accion_tactica ?? f?.accion_tactica
         const extra = {}
-        if (!p.accion_tactica && f.accion_tactica) extra.accion_tactica = f.accion_tactica
-        if (!p.tesis_corta && f.tesis)             extra.tesis_corta   = f.tesis
+        if (accion && accion !== p.accion_tactica) extra.accion_tactica = accion
+        if (f && !p.tesis_corta && f.tesis)        extra.tesis_corta   = f.tesis
         return Object.keys(extra).length ? { ...p, ...extra } : p
       }),
     })
@@ -348,7 +360,7 @@ export function usePortfolio(uid) {
       ons:         enrich(base.ons),
       fci:         enrich(base.fci),
     }
-  }, [rawPortfolio, cotizaciones, rawFundamentals])
+  }, [rawPortfolio, cotizaciones, rawFundamentals, rankingTactico])
   const resumen = useMemo(() => computeResumen(portfolio), [portfolio])
 
   // Rendimiento de los últimos 30 días (o los días disponibles si hay menos historia).

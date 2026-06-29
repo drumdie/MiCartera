@@ -112,17 +112,20 @@ export function buildCatalystContext(portfolio, catalizadores) {
 
 export function buildFundamentalContext(fundamental) {
   const lines = [
-    '# Análisis fundamental — MiCartera',
+    '# Análisis fundamental OBJETIVO (solo empresa) — MiCartera',
     `Fecha: ${new Date().toLocaleDateString('es-AR')}`,
+    'CONTRATO A USAR: seguí "Análisis Fundamental Objetivo" (archivo analisis-fundamental.md de este Proyecto). NO uses el contrato táctico.',
     '',
-    'Analizá cada posición y devolvé un JSON con el siguiente esquema exacto:',
+    'Analizá cada posición de forma OBJETIVA, SOLO sobre la empresa. PROHIBIDO incluir % de',
+    'cartera, concentración o acción táctica — eso lo hace el análisis táctico por contrato (CP).',
+    'Devolvé un JSON con el siguiente esquema exacto:',
     '',
     '```json',
     '{',
+    '  "fecha_analisis": "2026-06-26",',
     '  "analisis": [',
     '    {',
     '      "ticker": "AAPL",',
-    '      "accion_tactica": "mantener",',
     '      "sentimiento": "positivo",',
     '      "q1_2026": "Revenue $X (+Y% a/a) · Descripción en una línea (null si no hay datos recientes)",',
     '      "kpis": {',
@@ -146,8 +149,9 @@ export function buildFundamentalContext(fundamental) {
     '```',
     '',
     'Reglas:',
-    '  accion_tactica: "comprar" | "mantener" | "tomar_parcial" | "vender"',
-    '  sentimiento: "positivo" | "neutral" | "negativo"',
+    '  NO incluir accion_tactica ni % de cartera — esto es SOLO análisis de la EMPRESA (lo táctico va por CP).',
+    '  sentimiento: "positivo" | "neutral" | "negativo" (sobre la empresa, no sobre tenerla en cartera)',
+    '  fecha_analisis: fecha de hoy (YYYY-MM-DD) — la app muestra "Análisis del DD/MM/YY"',
     '  q1_2026: string con earnings más recientes o null',
     '  kpis: objeto con los 4–6 KPIs más relevantes para ese ticker específico (no forzar siempre los mismos)',
     '  comparable_ev_ebitda: peer más relevante del sector, o null si no aplica',
@@ -208,8 +212,9 @@ export function buildContratoContext(tactico, fundamentalsByTicker = {}, cataliz
   }
 
   const lines = [
-    '# Táctico de cartera por Contrato de Inversión — MiCartera',
+    '# Táctico de cartera por Contrato de Inversión (CP) — MiCartera',
     `Fecha: ${new Date().toLocaleDateString('es-AR')}`,
+    'CONTRATO A USAR: seguí "Análisis Táctico por CP" (archivo analisis-tactico-cp.md de este Proyecto). NO uses el contrato fundamental.',
     '',
     '## Concentración de cartera',
     ...tactico.concentracion.map(g => `- ${g.grupo}: ${g.pct}%`),

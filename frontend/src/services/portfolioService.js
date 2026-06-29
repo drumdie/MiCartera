@@ -68,9 +68,11 @@ export async function saveContrato(uid, ticker, contrato) {
 
 // ── Ranking táctico de cartera (output del LLM, nivel cartera) ──
 // Doc /users/{uid}/tactico/ranking → { items: [...], actualizado }.
+// callback(items, actualizado): items = ranking; actualizado = fecha ISO del último análisis.
 export function onSnapshotRankingTactico(uid, callback) {
   return onSnapshot(doc(db, 'users', uid, 'tactico', 'ranking'), (snap) => {
-    callback(snap.exists() ? (snap.data().items ?? []) : [])
+    const d = snap.exists() ? snap.data() : {}
+    callback(d.items ?? [], d.actualizado ?? null)
   })
 }
 

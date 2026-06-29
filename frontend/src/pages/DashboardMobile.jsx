@@ -16,6 +16,7 @@ import KPICard         from '../components/ui/KPICard'
 import Modal           from '../components/ui/Modal'
 import Toast           from '../components/ui/Toast'
 import PrivacyMask     from '../components/ui/PrivacyMask'
+import SyncingScreen   from '../components/ui/SyncingScreen'
 import StressCard      from '../components/ui/StressCard'
 import DonutChart      from '../components/charts/DonutChart'
 import TradingViewWidget from '../components/charts/TradingViewWidget'
@@ -24,6 +25,7 @@ import LiquidezBlock   from '../components/portfolio/LiquidezBlock'
 import FundCard        from '../components/fundamental/FundCard'
 import CatalystItem    from '../components/catalysts/CatalystItem'
 import CopyContextBtn  from '../components/claude-tools/CopyContextBtn'
+import RefreshAndCopyFundamental from '../components/claude-tools/RefreshAndCopyFundamental'
 import PasteResultArea from '../components/claude-tools/PasteResultArea'
 
 const CAT_META = {
@@ -324,6 +326,9 @@ export default function Dashboard() {
           <div className="section-fade">
 
             {!hasFreshData ? (
+              syncing ? (
+                <div className="section"><SyncingScreen /></div>
+              ) : (
               /* ── Estado pre-sync: sin datos frescos ── */
               <div className="section">
                 <div className="state">
@@ -332,6 +337,7 @@ export default function Dashboard() {
                   <div className="state-desc">Sincronizá con PPI (botón central) para ver tu cartera actualizada.</div>
                 </div>
               </div>
+              )
             ) : (<>
             {/* ── HERO ── */}
             <div className="hero-block">
@@ -442,12 +448,7 @@ export default function Dashboard() {
               </div>
 
               <LiquidezBlock liquidez={portfolio.liquidez} />
-
-              <div className="eyebrow" style={{ margin: '20px 0 10px' }}>Herramientas Claude</div>
-              <div className="action-btns">
-                <CopyContextBtn tipo="tactico"     onToast={showToast} />
-                <PasteResultArea id="paste-tac" label="Pegar resultado táctico" sub="Cargá el JSON de respuesta de Claude" onLoad={() => showToast('✓ Resultado cargado')} />
-              </div>
+              {/* Táctico-simple eliminado: el único análisis táctico es el "por CP" en Perfil de Inversión. */}
               </>)}
             </div>
             </>)}
@@ -464,22 +465,11 @@ export default function Dashboard() {
                 <div className="state-desc">{hasFreshData ? 'Tu cartera no tiene posiciones activas.' : 'Sincronizá con PPI (botón central) para ver fundamentales.'}</div>
               </div>
             ) : (<>
-            <div className="action-btns" style={{ marginTop: 12 }}>
-              <button className="action-btn" onClick={handleRefreshFundamentals} disabled={fundRefreshing}>
-                <span className="ab-icon"><i className={`ti ${fundRefreshing ? 'ti-loader-2 spin-ic' : 'ti-chart-dots'}`} aria-hidden="true" /></span>
-                <div className="ab-text">
-                  <div className="ab-title">{fundRefreshing ? 'Actualizando…' : 'Actualizar fundamentales'}</div>
-                  <div className="ab-sub">Fetcha P/E, EV/EBITDA, márgenes desde Yahoo Finance</div>
-                </div>
-                <span className="ab-arrow"><i className="ti ti-arrow-right" aria-hidden="true" /></span>
-              </button>
-            </div>
-
             {fundamental.length === 0 ? (
               <div className="state">
                 <i className="ti ti-chart-bar" aria-hidden="true" />
                 <div className="state-title">Sin datos fundamentales</div>
-                <div className="state-desc">Presioná "Actualizar fundamentales" para cargar métricas reales desde Yahoo Finance.</div>
+                <div className="state-desc">Usá el "Paso 1" (abajo) para traer las métricas de Yahoo y copiar el prompt.</div>
               </div>
             ) : (
               fundamental.map(sector => (
@@ -498,10 +488,10 @@ export default function Dashboard() {
 
             <div className="eyebrow" style={{ margin: '20px 0 10px' }}>Análisis Claude</div>
             <div className="action-btns">
-              <CopyContextBtn tipo="fundamental" onToast={showToast} />
+              <RefreshAndCopyFundamental onToast={showToast} />
               <PasteResultArea
                 id="paste-fund"
-                label="Pegar análisis fundamental"
+                label="Paso 2 · Pegar análisis"
                 sub="Pegá el JSON de Claude — guarda tesis, escenarios y acción táctica"
                 onLoad={handleFundAnalysisLoad}
               />

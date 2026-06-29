@@ -9,12 +9,13 @@ const URGENCIA_LBL = { alta: 'Alta', media: 'Media', baja: 'Baja', sin_accion_in
 
 export default function RankingTacticoPanel({ uid, tactico, fundamentalsByTicker, catalizadores, onToast }) {
   const [ranking, setRanking]   = useState([])
+  const [fechaTactico, setFechaTactico] = useState(null)
   const [pasteOpen, setPasteOpen] = useState(false)
   const [pasteVal, setPasteVal]   = useState('')
 
   useEffect(() => {
     if (!uid) return
-    return onSnapshotRankingTactico(uid, setRanking)
+    return onSnapshotRankingTactico(uid, (items, fecha) => { setRanking(items); setFechaTactico(fecha) })
   }, [uid])
 
   const handleCopy = async () => {
@@ -51,6 +52,11 @@ export default function RankingTacticoPanel({ uid, tactico, fundamentalsByTicker
         <span style={{ fontFamily: 'var(--font-head)', fontSize: 13, fontWeight: 700, color: '#fff' }}>Ranking táctico</span>
         <span className="badge badge-purple"><i className="ti ti-sparkles" aria-hidden="true" />Claude</span>
       </div>
+      {fechaTactico && (
+        <div style={{ fontSize: 10, color: 'var(--muted)', marginTop: -4, marginBottom: 10 }}>
+          Táctico del {new Date(fechaTactico).toLocaleDateString('es-AR')}
+        </div>
+      )}
 
       {ranking.length === 0 ? (
         <div style={{ fontSize: 12, color: 'var(--muted)', lineHeight: 1.6, marginBottom: 12 }}>

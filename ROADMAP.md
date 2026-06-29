@@ -163,11 +163,13 @@ Storage: creds por-usuario, cifradas con envelope (DEK envuelta bajo passphrase)
 - **Estado de partida (hallazgo 2026-06-22):** conviven **dos esquemas** en el backend — `_encrypt_doc/_decrypt_doc` usan la **clave global legacy** (`DATA_ENCRYPTION_KEY`), mientras el portfolio real está **device-encrypted con la DEK por-usuario** (el front lo escribe; `read_user_portfolio` ni lo lee → cae a vacío). **SEC-2 unifica todo en la DEK de sesión** (`device_crypto.fernet_*` + `session_store.get(uid)`), server-side.
 
 **Fases:**
-- **F1 — Escritura server-side.** El backend cifra portfolio (y meta: avg_costs, history) con la **DEK de sesión** y escribe en Firestore. Reemplaza el cifrado que hoy hace el front y la clave global legacy.
-- **F2 — Lectura server-side.** `GET /api/portfolio` descifra con la DEK de sesión y devuelve **plano**. El front consume ese endpoint en vez de leer ciphertext + descifrar local.
-- **F3 — Purga del front.** Eliminar `_dekMaterial`, `getUserDEKMaterial()`, Fernet JS y los reads directos a `/portfolio` `/broker` `/keywrap`. (Depende de **B-limitada** para el offline.)
-- **F4 — Firestore Rules.** Bloquear `/portfolio` `/broker` `/keywrap` (y meta) **completamente al cliente** (solo backend con Admin SDK).
-- **F5 — Sesión/DEK.** Confirmar TTL 3 min + borrado en lock/logout + binding a sesión (parte ya en SEC-1; reforzar).
+- **F1 — Escritura server-side.** ✅ (2026-06-26, commit `9384c77`, APK v18, Cloud Run **rev 00008**) El backend cifra portfolio (y meta: avg_costs, history) con la **DEK de sesión** (`device_crypto.fernet_*` + `session_store`) y escribe en Firestore (`sync-source`). Unifica los dos esquemas (ya no usa la clave global legacy para esos docs).
+- **F2 — Lectura server-side.** ✅ (2026-06-26) `GET /api/portfolio` descifra con la DEK de sesión y devuelve **plano**; el front lee **backend-first** (`fetchPortfolioFromBackend`) con fallback transicional a la DEK local.
+- **F3 — Purga del front.** ⏳ **PENDIENTE.** Eliminar `_dekMaterial`, `getUserDEKMaterial()`, Fernet JS y los reads directos a `/portfolio` `/broker` `/keywrap`. (Depende de **B-limitada** para el offline.)
+- **F4 — Firestore Rules.** ⏳ **PENDIENTE.** Bloquear `/portfolio` `/broker` `/keywrap` (y meta) **completamente al cliente** (solo backend con Admin SDK).
+- **F5 — Sesión/DEK + re-unlock transparente.** ✅ (2026-06-26) TTL 3 min sliding + borrado en lock/logout. **Re-unlock transparente**: passphrase en RAM del front (sessionApi) + `apiClient` reintenta ante `401 needs_unlock` y re-`/unlock` (invisible). El `unlock` desbloquea el backend ANTES de exponer la DEK local (fix de carrera del auto-sync).
+
+> **Avance SEC-2 ≈ 55-60%:** el core (mover la crypto al server) está en producción; falta F3 (bloqueada por B-limitada) + F4 (Rules), el hardening de cierre.
 
 **Decisiones de diseño (2026-06-22):**
 - **Offline → Opción B-limitada** (no online-only). Caché de dispositivo con clave **no exportable en Android Keystore**, crypto **nativa (no WebView)**, **SQLCipher** bien configurado. Cachea **solo cartera procesada para la UI** (resumen, posiciones, últimas cotizaciones). **Nunca** cachea: creds del broker, DEK del servidor, passphrase/recovery, tokens. `allowBackup=false`. Label "datos offline del…" + **expiración 24–48h**. Wipe en logout/cambio de user y si se invalida biometría/Keystore → rebuild online. Movimientos detallados / creds / operaciones sensibles: **solo online**. → Es su propio **hito, después de SEC-2** (trabajo nativo Android; web queda online-only).
@@ -175,7 +177,7 @@ Storage: creds por-usuario, cifradas con envelope (DEK envuelta bajo passphrase)
 
 **SEC-3 · Doble control (passphrase + KMS) — fase posterior.** `K_combinada = HKDF(clave_de_passphrase, KMS.decrypt(secreto_kms_del_usuario))` → desenvolver la DEK requiere **passphrase Y KMS**. Preserva que el operador **no** pueda descifrar unilateralmente, suma anti-dump + audit + rotación (rotar la KMS sin re-cifrar datos). La "recuperación" sigue siendo por **recovery code** (lado usuario), no por KMS. No bloquea SEC-2.
 
-**BROKER-ABS · Multi-broker (se contempla en SEC-2).** La app es **multi-user y multi-broker** desde el día 1 — NO es una app PPI. Un user nuevo entra, carga **sus** Broker Credentials y anda.
+**BROKER-ABS · Multi-broker (se contempla en SEC-2).** ⚠️ **Seam hecho (2026-06-26):** `backend/app/services/broker_client.py` (`BrokerClient` + `PPIBrokerClient`, selección por `broker_type`). Falta implementar adaptadores de otros brokers. La app es **multi-user y multi-broker** desde el día 1 — NO es una app PPI. Un user nuevo entra, carga **sus** Broker Credentials y anda.
 - Capa de **adaptador de broker** (`BrokerClient` con implementaciones; hoy solo `PPIBrokerClient` envolviendo `ppi_client`), elegida por-usuario vía un campo `broker_type`. Las creds pasan a ser **genéricas** ("broker creds"), no "creds PPI".
 - Los endpoints nuevos de SEC-2 (cifrar/leer, creds write-only) nacen **broker-agnósticos**.
 - Antes de producción: leer specs/forms de otras Broker APIs e implementar 1-2 adaptadores más.
@@ -183,6 +185,42 @@ Storage: creds por-usuario, cifradas con envelope (DEK envuelta bajo passphrase)
 **COTI · Cotizaciones globales (rediseño de cadencia + fuente).** Hoy el scheduler corre **cada 2 min 24/7** (incluso con mercado cerrado) y saca MEP/CCL de **AL30/GD30 vía la cuenta PPI del owner**. Cambios:
 - **Cadencia market-aware:** refrescar el doc global solo en **horario de mercado BYMA** (días hábiles) cada ~10 min; pausa / 1-2x por día con mercado cerrado. Mantener el modelo **global-doc read-only para clientes** (no re-acoplar la apertura de cada user con una escritura global compartida — ver P0.3). *(Recomendación de Claude; el usuario evaluaba on-open vs N-veces/día.)*
 - **Fuente keyless para datos globales:** sacar MEP/CCL/oficial/RP de una **fuente pública sin credenciales** (p.ej. dolarapi/criptoya/argentinadatos) → **no depende de la cuenta de ningún user/broker**. Los **precios por-ticker** siguen viniendo del **sync por-usuario** (cada user trae los suyos), no del scheduler.
+
+---
+
+## 🛠️ Sesión 2026-06-28 · bugfixes + refactor de análisis + web (rama `feat/rediseno-ux-mobile`)
+
+Trabajo hecho que no estaba documentado. **Sin commitear aún** (commit tras validar v20 + web).
+
+**Bugfixes (APK v15-v20, web desplegada):**
+- ✅ **Bug 1** — la lectura del portfolio espera a que la DEK esté lista (no lee antes de la passphrase; se acabó el fallback `legacy-backend` con 0 descifrados). `usePortfolio` gateado a `isDEKReady()`.
+- ✅ **Bug 2** — G/P de ONs/Bonos incluye la **renta cobrada**: el front calcula el total (precio + renta) con campos presentes; "Var. precio" (solo-precio, secundario) vs "Ganancia total". Robusto a datos viejos.
+- ✅ **Bug 3** — chip RP del header → `/detalle/rp` (`RiesgoPaisDetail.jsx` nuevo), ya no a `/detalle/mep`.
+- ✅ **Bug 4** — botón back de Android (`@capacitor/app` + `AndroidBackHandler.jsx`): ruta no-principal → atrás; tab → principal; principal → doble-tap salir.
+- ✅ **Auto-sync** — fix de carrera: `unlock` desbloquea el backend antes de exponer la DEK local (con SEC-2 el sync exige sesión backend).
+- ✅ Quitados los **paneles de diagnóstico** lectura/sync de la APK.
+
+**Refactor del modelo de análisis** (cambio de contrato — ver `analisis-fundamental.md` + `analisis-tactico-cp.md` en la raíz):
+- ✅ **Fundamental = empresa pura**: el prompt (`buildFundamentalContext`) ya no pide `accion_tactica` ni % de cartera; pide `fecha_analisis`. ⚠️ Las tesis **ya guardadas** siguen con el texto viejo hasta **re-correr** el análisis por ticker.
+- ✅ **Eliminado el "táctico-simple"** del tab Posiciones (mobile + web). El único táctico es el **"por CP"** (Contrato Perfil) en Perfil de Inversión.
+- ✅ **Badge táctico desde el CP** (ranking, `tactico/ranking`), no del fundamental.
+- ✅ **Fechas**: "Análisis del DD/MM/YY" (FundCard) + "Táctico del DD/MM/YY" (RankingTacticoPanel).
+- ⏳ **Pendiente**: guardar `analisis_tactico` completo (hoy solo se guarda `ranking_tactico`) para mostrar la **justificación por posición**, no solo el ranking.
+
+**Web (cumple P4 "KPI cards con drill-down"):**
+- ✅ Las 5 KPI cards → al click la zona se transforma en **panel de detalle inline** (`KpiDetailPanel.jsx`) + "← Volver". Toggle Moneda/Instrumento a **tamaño fijo**.
+- ⏳ **Riesgo país — mejora pendiente (no es bug):** mostrar cómo está HOY vs su historial (último 1-2 años), no solo el mínimo. Requiere **fuente de serie histórica de riesgo país** → buscar con un agente (argentinadatos ya da la serie; evaluar).
+
+**Tooling:**
+- ✅ Skills `build-apk` (apk+web) y `deploy` en `.claude/skills/`. Docs de análisis `analisis-fundamental.md` + `analisis-tactico-cp.md` en la raíz (contratos para el Proyecto de claude.ai y para Claude Code).
+
+**Correcciones pendientes (feedback del usuario 2026-06-28, post-prueba):**
+- ⏳ **CORR-1 · Texto del tab Posiciones = resumen TÁCTICO, no fundamental.** Hoy el texto breve de cada `AssetRow` (en Posiciones) muestra la `tesis_corta` (que viene del fundamental). Debe mostrar un **resumen táctico**: la razón de la recomendación (mantener / comprar_escalonado / reducir_parcial / observar / etc.), **cruzando peso vs banda (CP) + fundamental**. Es decir, leer la `justificacion` del `analisis_tactico` por ticker (condensada), NO la tesis fundamental. Depende de guardar `analisis_tactico` completo (ver pendiente arriba).
+- ⏳ **CORR-2 · "Análisis completo" del Fundamental = versión profunda (3–5 párrafos).** El `analisis_extendido` que se ve al tocar "análisis completo" en `FundCard` debe ser el **análisis profundo de 3–5 párrafos**, no un resumen de 1 párrafo. Al generar el fundamental (contrato `analisis-fundamental.md`) hay que producir el extendido completo por ticker.
+- 🟢 *Aclaración "en banda" (no es bug):* la banda es el rango `min–objetivo–max` de % de cartera que el usuario definió en su CP por ticker. "En banda" = el % actual está dentro del rango; "sobreponderada" = sobre el máximo. Ej: LAR 12,23% en banda 10–20–20 → NO tomar parcial (estaba mal el texto viejo). El usuario fondea de a poco hacia el objetivo en correcciones; la banda lo contempla.
+
+**Cierre:**
+- ⏳ **Merge `feat/rediseno-ux-mobile` → master** (pendiente de validación de v20 + web).
 
 ---
 
