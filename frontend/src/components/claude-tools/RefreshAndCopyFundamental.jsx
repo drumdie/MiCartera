@@ -31,8 +31,8 @@ export default function RefreshAndCopyFundamental({ onToast }) {
     <button className="action-btn" onClick={handle} disabled={busy}>
       <span className="ab-icon"><i className={`ti ${busy ? 'ti-loader-2 spin-ic' : 'ti-number-1'}`} aria-hidden="true" /></span>
       <div className="ab-text">
-        <div className="ab-title">{busy ? 'Actualizando…' : 'Paso 1 · Actualizar y copiar prompt'}</div>
-        <div className="ab-sub">Trae métricas de Yahoo y copia el prompt para Claude.ai</div>
+        <div className="ab-title">{busy ? 'Actualizando…' : 'Paso 1 · Copiar posiciones y buscar fundamentales vía IA'}</div>
+        <div className="ab-sub">Trae las métricas de Yahoo y copia el texto para analizar con IA</div>
       </div>
       <span className="ab-arrow"><i className="ti ti-arrow-right" aria-hidden="true" /></span>
     </button>

@@ -9,6 +9,7 @@ import { usePrivacy } from '../hooks/usePrivacy'
 import {
   formatARS, formatUSD, formatPctShort, usdAtRate,
 } from '../utils/formatters'
+import { _GRUPO_TEMATICO, _GRUPO_ORDEN } from '../hooks/usePortfolio'
 import PrivacyMask from './ui/PrivacyMask'
 
 const CAT_LABEL = {
@@ -150,31 +151,45 @@ function GpRows() {
 }
 
 function PosicionesRows() {
-  const { portfolio, cotizaciones, resumen } = useApp()
+  const { portfolio, fundamental, cotizaciones, resumen } = useApp()
   const mep = cotizaciones?.dolar_mep ?? 0
   const totalCartera = resumen?.valor_total_ars ?? 0
 
-  // Agrupa acciones AR + CEDEARs por categoría (sin depender de fundamentals).
-  const grupos = [
-    { key: 'acciones_ar', label: 'Acciones AR' },
-    { key: 'cedears',     label: 'CEDEARs' },
-    { key: 'bonos',       label: 'Bonos' },
-    { key: 'ons',         label: 'ONs' },
-    { key: 'fci',         label: 'FCI' },
-  ]
-    .map(({ key, label }) => {
-      const posiciones = (portfolio?.[key]?.posiciones ?? [])
-        .filter(p => p.ticker)
-        .sort((a, b) => (b.valor_corriente_ars ?? 0) - (a.valor_corriente_ars ?? 0))
-      const valor = posiciones.reduce((s, p) => s + (p.valor_corriente_ars ?? 0), 0)
-      return {
-        key, label, posiciones, valor,
-        pct: totalCartera > 0 ? (valor / totalCartera) * 100 : 0,
-      }
-    })
-    .filter(g => g.posiciones.length > 0)
-    .sort((a, b) => b.valor - a.valor)
+  // ticker → sector (de los docs fundamentales) para agrupar la renta variable por Tipo.
+  const tickerSector = {}
+  for (const g of fundamental ?? []) for (const p of g.posiciones ?? []) {
+    if (p.ticker && p.sector) tickerSector[p.ticker] = p.sector
+  }
 
+  // Renta variable (acciones AR + CEDEARs) agrupada por Tipo, igual que el tab Fundamental.
+  const rvByGrupo = {}
+  for (const cat of ['acciones_ar', 'cedears']) {
+    for (const p of portfolio?.[cat]?.posiciones ?? []) {
+      if (!p.ticker) continue
+      const key = _GRUPO_TEMATICO[p.ticker] || tickerSector[p.ticker] || (cat === 'cedears' ? 'CEDEARs' : 'Acciones AR')
+      ;(rvByGrupo[key] ??= []).push(p)
+    }
+  }
+  const ordenGrupo = (g) => { const i = _GRUPO_ORDEN.indexOf(g); return i === -1 ? _GRUPO_ORDEN.length : i }
+  const mkGrupo = (key, label, posiciones) => {
+    const ps = posiciones.filter(p => p.ticker).sort((a, b) => (b.valor_corriente_ars ?? 0) - (a.valor_corriente_ars ?? 0))
+    const valor = ps.reduce((s, p) => s + (p.valor_corriente_ars ?? 0), 0)
+    return { key, label, posiciones: ps, valor, pct: totalCartera > 0 ? (valor / totalCartera) * 100 : 0 }
+  }
+  const rvGrupos = Object.entries(rvByGrupo)
+    .map(([label, posiciones]) => mkGrupo(`rv-${label}`, label, posiciones))
+    .sort((a, b) => ordenGrupo(a.label) - ordenGrupo(b.label) || b.valor - a.valor)
+
+  // Renta fija + FCI por categoría, debajo.
+  const rfGrupos = [
+    { key: 'bonos', label: 'Bonos' },
+    { key: 'ons',   label: 'ONs' },
+    { key: 'fci',   label: 'FCI' },
+  ]
+    .map(({ key, label }) => mkGrupo(key, label, portfolio?.[key]?.posiciones ?? []))
+    .filter(g => g.posiciones.length > 0)
+
+  const grupos = [...rvGrupos, ...rfGrupos]
   const totalTickers = grupos.reduce((s, g) => s + g.posiciones.length, 0)
 
   if (grupos.length === 0) {
@@ -183,7 +198,7 @@ function PosicionesRows() {
 
   return (
     <>
-      <div className="kpidp-sub">{grupos.length} categorías · {totalTickers} posiciones</div>
+      <div className="kpidp-sub">Renta variable por tipo · luego renta fija · {totalTickers} posiciones</div>
       <div className="kpidp-list">
         {grupos.map(g => (
           <div key={g.key} className="kpidp-group">

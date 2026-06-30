@@ -66,17 +66,22 @@ export async function saveContrato(uid, ticker, contrato) {
   await setDoc(ref, { por_ticker: { [ticker]: payload } }, { merge: true })
 }
 
-// ── Ranking táctico de cartera (output del LLM, nivel cartera) ──
-// Doc /users/{uid}/tactico/ranking → { items: [...], actualizado }.
-// callback(items, actualizado): items = ranking; actualizado = fecha ISO del último análisis.
-export function onSnapshotRankingTactico(uid, callback) {
-  return onSnapshot(doc(db, 'users', uid, 'tactico', 'ranking'), (snap) => {
+// ── Análisis táctico por ticker (output del CP) ──
+// Doc PROPIO /users/{uid}/tactico/analisis → { analisis: [...], ranking: [...], actualizado }.
+//   analisis = analisis_tactico por ticker (justificacion, salud_tesis, accion_tactica…) →
+//              de acá sale el badge + el texto táctico de cada posición en el tab Posiciones.
+//   ranking  = ranking_tactico (orden por impacto), por si se usa a futuro.
+// Va en su propio doc (no en /tactico/ranking) a propósito: un cliente VIEJO que todavía
+// escriba /tactico/ranking con solo {items} no puede pisar la justificación de acá.
+// callback(analisis, ranking, actualizado).
+export function onSnapshotTacticoAnalisis(uid, callback) {
+  return onSnapshot(doc(db, 'users', uid, 'tactico', 'analisis'), (snap) => {
     const d = snap.exists() ? snap.data() : {}
-    callback(d.items ?? [], d.actualizado ?? null)
+    callback(d.analisis ?? [], d.ranking ?? [], d.actualizado ?? null)
   })
 }
 
-export async function saveRankingTactico(uid, ranking) {
-  const ref = doc(db, 'users', uid, 'tactico', 'ranking')
-  await setDoc(ref, { items: ranking, actualizado: new Date().toISOString() })
+export async function saveTacticoAnalisis(uid, analisis, ranking = []) {
+  const ref = doc(db, 'users', uid, 'tactico', 'analisis')
+  await setDoc(ref, { analisis, ranking, actualizado: new Date().toISOString() })
 }

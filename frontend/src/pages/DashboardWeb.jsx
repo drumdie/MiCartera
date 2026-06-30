@@ -5,6 +5,9 @@ import { formatARS, formatUSD, usdAtRate } from '../utils/formatters'
 import { TICKERS_TV } from '../data/mockPortfolio'
 import { apiPost } from '../services/apiClient'
 import { addCatalyst, deleteCatalyst, replaceCatalysts } from '../services/portfolioService'
+import { useContratos } from '../hooks/useContratos'
+import { orderedFundamentalGroups } from '../utils/fundamentalOrder'
+import FundSortControl from '../components/fundamental/FundSortControl'
 
 import Header          from '../components/layout/Header'
 import CurrencyToggle  from '../components/layout/CurrencyToggle'
@@ -24,6 +27,7 @@ import CopyContextBtn  from '../components/claude-tools/CopyContextBtn'
 import PasteResultArea from '../components/claude-tools/PasteResultArea'
 import SyncingScreen   from '../components/ui/SyncingScreen'
 import RefreshAndCopyFundamental from '../components/claude-tools/RefreshAndCopyFundamental'
+import AnalisisTacticoPanel from '../components/claude-tools/AnalisisTacticoPanel'
 import KpiDetailPanel  from '../components/KpiDetailPanel'
 
 const TABS = [
@@ -50,7 +54,17 @@ export default function Dashboard() {
           refreshFundamentals, isDemo, hasFreshData, syncing, user } = useApp()
   const { privacyOn, toggle: togglePrivacy } = usePrivacy()
 
+  // Contexto táctico (contratos × cartera) + mapa fundamental por ticker, para la sección
+  // "Análisis Táctico" del tab Posiciones.
+  const { tactico } = useContratos(user?.uid, portfolio)
+  const fundByTicker = useMemo(() => {
+    const map = {}
+    for (const s of fundamental ?? []) for (const p of s.posiciones ?? []) map[p.ticker] = p
+    return map
+  }, [fundamental])
+
   const [activeTab,        setActiveTab]        = useState('posiciones')
+  const [fundSort,         setFundSort]         = useState('posiciones')
   const [selectedKpi,      setSelectedKpi]      = useState(null)
   const [selectedTicker,   setSelectedTicker]   = useState(null)
   const [modalOpen,        setModalOpen]        = useState(false)
@@ -443,7 +457,17 @@ export default function Dashboard() {
         </div>
 
         <LiquidezBlock liquidez={portfolio.liquidez} />
-        {/* Táctico-simple eliminado: el único análisis táctico es el "por CP" en Perfil de Inversión. */}
+
+        {/* Análisis Táctico: copiar contexto / pegar análisis → texto táctico por posición. */}
+        {!isDemo && (
+          <AnalisisTacticoPanel
+            uid={user?.uid}
+            tactico={tactico}
+            fundamentalsByTicker={fundByTicker}
+            catalizadores={catalizadores}
+            onToast={showToast}
+          />
+        )}
       </div>
 
       {/* ── TAB: FUNDAMENTAL ── */}
@@ -452,27 +476,31 @@ export default function Dashboard() {
         {/* Cards por sector — solo si hay datos */}
         {fundamental.length === 0 ? (
           <div style={{ textAlign: 'center', color: 'var(--text-muted, #888)', padding: '40px 16px' }}>
-            Sin datos fundamentales. Usá el "Paso 1" (abajo) para traer las métricas de Yahoo y copiar el prompt.
+            Sin datos fundamentales. Usá el "Paso 1" (abajo) para traer las métricas de Yahoo y copiar el texto para la IA.
           </div>
-        ) : (
-          fundamental.map(sector => (
+        ) : (<>
+          <FundSortControl value={fundSort} onChange={setFundSort} />
+          {orderedFundamentalGroups(fundamental, portfolio, fundSort).map(sector => (
             <div key={sector.sector}>
               <div className="sec-title" style={{ marginTop: 16 }}>{sector.sector}</div>
               <div className="fund-grid">
                 {sector.posiciones.map(pos => <FundCard key={pos.ticker} position={pos} />)}
               </div>
             </div>
-          ))
-        )}
+          ))}
+        </>)}
 
-        {/* Herramientas Claude */}
-        <div className="sec-title" style={{ marginTop: 20 }}>Análisis Claude</div>
+        {/* Análisis Fundamental (IA) */}
+        <div className="sec-title" style={{ marginTop: 20, display: 'flex', alignItems: 'center', gap: 6 }}>
+          Análisis Fundamental
+          <span className="badge badge-purple"><i className="ti ti-sparkles" aria-hidden="true" />IA</span>
+        </div>
         <div className="action-btns">
           <RefreshAndCopyFundamental onToast={showToast} />
           <PasteResultArea
             id="paste-fund"
-            label="Paso 2 · Pegar análisis"
-            sub="Pegá el JSON de Claude — guarda tesis, escenarios y acción táctica"
+            label="Paso 2 · Pegar análisis de la IA"
+            sub="Pegá el resultado — guarda tesis, escenarios y datos de cada empresa"
             onLoad={handleFundAnalysisLoad}
           />
         </div>

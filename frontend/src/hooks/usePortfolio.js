@@ -4,7 +4,7 @@ import {
   onSnapshotCotizaciones,
   onSnapshotCatalysts,
   onSnapshotFundamentals,
-  onSnapshotRankingTactico,
+  onSnapshotTacticoAnalisis,
 } from '../services/portfolioService'
 import { apiGet } from '../services/apiClient'
 import {
@@ -187,6 +187,7 @@ export function usePortfolio(uid) {
   const [portfolioHistory,  setPortfolioHistory]  = useState({})
   const [rawFundamentals,   setRawFundamentals]   = useState({})
   const [rankingTactico,    setRankingTactico]    = useState([])
+  const [tacticoAnalisis,   setTacticoAnalisis]   = useState([])
   const [loading,           setLoading]           = useState(true)
   const [readDiag,          setReadDiag]          = useState(null)
 
@@ -303,10 +304,14 @@ export function usePortfolio(uid) {
   }, [uid])
 
   // Ranking táctico (output del análisis por CP): de acá sale el badge táctico de cada
-  // posición + la fecha del análisis. El fundamental ya NO define la acción.
+  // posición + la fecha del análisis + la justificación táctica por ticker. El fundamental
+  // ya NO define la acción ni el texto del tab Posiciones (CORR-1).
   useEffect(() => {
     if (!uid) return
-    return onSnapshotRankingTactico(uid, (items) => setRankingTactico(items ?? []))
+    return onSnapshotTacticoAnalisis(uid, (analisis, ranking) => {
+      setTacticoAnalisis(analisis ?? [])
+      setRankingTactico(ranking ?? [])
+    })
   }, [uid])
 
   // Stress test desde el backend — se puede refrescar manualmente con refreshStress()
@@ -325,8 +330,10 @@ export function usePortfolio(uid) {
     fetchStress()
   }, [fetchStress])
 
-  // Portfolio base + enriquecido con el análisis fundamental (accion_tactica, tesis)
-  // por ticker, para que el tab Posiciones muestre el badge táctico y la tesis corta.
+  // Portfolio base + enriquecido para el tab Posiciones:
+  //  · badge táctico (accion_tactica) ← ranking táctico del CP.
+  //  · tesis_corta ← justificación TÁCTICA por ticker (analisis_tactico). El texto del
+  //    fundamental queda SOLO de fallback transicional hasta que haya análisis táctico (CORR-1).
   const portfolio = useMemo(() => {
     const base = computePortfolio(rawPortfolio, cotizaciones)
     if (!base) return base
@@ -335,19 +342,27 @@ export function usePortfolio(uid) {
     for (const f of Object.values(rawFundamentals)) byTicker[f.ticker] = f
     // Badge táctico desde el CP (ranking táctico): { ticker: accion }. El fundamental queda
     // SOLO de fallback legacy (ya no define la acción).
+    // Badge + justificación táctica por ticker. analisis_tactico cubre TODAS las posiciones
+    // (no solo las del ranking de mayores), así que es la fuente autoritativa; el ranking
+    // queda de fallback para la acción.
     const accionByTicker = {}
     for (const r of (rankingTactico ?? [])) if (r?.ticker && r?.accion) accionByTicker[r.ticker] = r.accion
+    for (const a of (tacticoAnalisis ?? [])) if (a?.ticker && a?.accion_tactica) accionByTicker[a.ticker] = a.accion_tactica
+    const justifByTicker = {}
+    for (const a of (tacticoAnalisis ?? [])) if (a?.ticker && a?.justificacion) justifByTicker[a.ticker] = a.justificacion
 
-    if (Object.keys(byTicker).length === 0 && Object.keys(accionByTicker).length === 0) return base
+    if (Object.keys(byTicker).length === 0 && Object.keys(accionByTicker).length === 0 && Object.keys(justifByTicker).length === 0) return base
 
     const enrich = (cat) => ({
       ...cat,
       posiciones: (cat.posiciones ?? []).map(p => {
         const f = byTicker[p.ticker]
         const accion = accionByTicker[p.ticker] ?? p.accion_tactica ?? f?.accion_tactica
+        // Preferir la justificación táctica; caer a la tesis fundamental solo si aún no hay táctico.
+        const tesisCorta = justifByTicker[p.ticker] ?? f?.tesis
         const extra = {}
-        if (accion && accion !== p.accion_tactica) extra.accion_tactica = accion
-        if (f && !p.tesis_corta && f.tesis)        extra.tesis_corta   = f.tesis
+        if (accion && accion !== p.accion_tactica)       extra.accion_tactica = accion
+        if (tesisCorta && tesisCorta !== p.tesis_corta)  extra.tesis_corta    = tesisCorta
         return Object.keys(extra).length ? { ...p, ...extra } : p
       }),
     })
@@ -360,7 +375,7 @@ export function usePortfolio(uid) {
       ons:         enrich(base.ons),
       fci:         enrich(base.fci),
     }
-  }, [rawPortfolio, cotizaciones, rawFundamentals, rankingTactico])
+  }, [rawPortfolio, cotizaciones, rawFundamentals, rankingTactico, tacticoAnalisis])
   const resumen = useMemo(() => computeResumen(portfolio), [portfolio])
 
   // Rendimiento de los últimos 30 días (o los días disponibles si hay menos historia).

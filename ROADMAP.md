@@ -214,13 +214,23 @@ Trabajo hecho que no estaba documentado. **Sin commitear aún** (commit tras val
 **Tooling:**
 - ✅ Skills `build-apk` (apk+web) y `deploy` en `.claude/skills/`. Docs de análisis `analisis-fundamental.md` + `analisis-tactico-cp.md` en la raíz (contratos para el Proyecto de claude.ai y para Claude Code).
 
-**Correcciones pendientes (feedback del usuario 2026-06-28, post-prueba):**
-- ⏳ **CORR-1 · Texto del tab Posiciones = resumen TÁCTICO, no fundamental.** Hoy el texto breve de cada `AssetRow` (en Posiciones) muestra la `tesis_corta` (que viene del fundamental). Debe mostrar un **resumen táctico**: la razón de la recomendación (mantener / comprar_escalonado / reducir_parcial / observar / etc.), **cruzando peso vs banda (CP) + fundamental**. Es decir, leer la `justificacion` del `analisis_tactico` por ticker (condensada), NO la tesis fundamental. Depende de guardar `analisis_tactico` completo (ver pendiente arriba).
-- ⏳ **CORR-2 · "Análisis completo" del Fundamental = versión profunda (3–5 párrafos).** El `analisis_extendido` que se ve al tocar "análisis completo" en `FundCard` debe ser el **análisis profundo de 3–5 párrafos**, no un resumen de 1 párrafo. Al generar el fundamental (contrato `analisis-fundamental.md`) hay que producir el extendido completo por ticker.
+**Correcciones (feedback del usuario 2026-06-28, post-prueba):**
+- ✅ **CORR-1 · Texto del tab Posiciones = resumen TÁCTICO, no fundamental.** *(Resuelto 2026-06-29.)* El `analisis_tactico` por ticker (con `justificacion`) ahora se **guarda** junto al ranking en `/users/{uid}/tactico/ranking` (`{ items, analisis, actualizado }`) — antes solo se guardaba `ranking_tactico`. `usePortfolio` arma `justifByTicker` y alimenta `tesis_corta` de cada `AssetRow` con la **justificación táctica** (cruce peso vs banda CP + fundamental); la tesis fundamental queda solo de fallback transicional hasta que haya análisis táctico. Archivos: `portfolioService.js` (`saveRankingTactico`/`onSnapshotRankingTactico` con 3er campo `analisis`), `RankingTacticoPanel.jsx` (pasa `analisis` al guardar), `usePortfolio.js` (estado `tacticoAnalisis` + enrich). *Validación pendiente: re-pegar el JSON táctico en Perfil para poblar `analisis` y ver el texto nuevo en Posiciones.*
+- 🟢 **CORR-2 · "Análisis completo" del Fundamental = versión profunda (3–5 párrafos).** *Sin cambio de código necesario:* `FundCard` ya renderiza `analisis_extendido` con `white-space: pre-line` (párrafos por doble salto de línea) y el backend lo preserva (`_ANALYSIS_KEYS`). El contrato `analisis-fundamental.md` ya pide "3–5 párrafos (doble salto de línea)". **Es tarea de contenido:** al regenerar el fundamental en claude.ai, producir el extendido profundo por ticker (no el resumen de 1 párrafo).
 - 🟢 *Aclaración "en banda" (no es bug):* la banda es el rango `min–objetivo–max` de % de cartera que el usuario definió en su CP por ticker. "En banda" = el % actual está dentro del rango; "sobreponderada" = sobre el máximo. Ej: LAR 12,23% en banda 10–20–20 → NO tomar parcial (estaba mal el texto viejo). El usuario fondea de a poco hacia el objetivo en correcciones; la banda lo contempla.
 
+**Sesión 2026-06-29 (rediseño táctico/posiciones · v23–v25):**
+- ✅ **Texto táctico por posición (todas, incl. renta fija).** El badge + el texto de cada `AssetRow` salen del `analisis_tactico` (las 30 posiciones), no del ranking de 15. `usePortfolio` arma `accionByTicker` + `justifByTicker` desde `tacticoAnalisis`.
+- ✅ **Doc propio `/users/{uid}/tactico/analisis`** (`{ analisis, ranking, actualizado }`) en vez de `/tactico/ranking`. Motivo: un cliente VIEJO que escribía `/tactico/ranking` con solo `{items}` pisaba la justificación. Funciones `saveTacticoAnalisis`/`onSnapshotTacticoAnalisis`. *Requiere re-pegar el JSON una vez en la sección nueva.*
+- ✅ **Sección "Análisis Táctico"** abajo del tab Posiciones (espejo del Fundamental): Copiar contexto / Pegar análisis, lenguaje común ("IA", sin "prompt"). Componente `AnalisisTacticoPanel.jsx`.
+- ✅ **Perfil de Inversión** = solo editar contratos. Se eliminó el panel "Ranking táctico" (`RankingTacticoPanel.jsx` borrado) y se renombró el cartel a **"Suma de % de Objetivo"**.
+- ✅ **Tab Fundamental → "Análisis Fundamental"** (icono IA) + pasos reescritos en lenguaje común.
+- ✅ **Botón "Posiciones" del home** → renta variable agrupada por Tipo (sector) + Bonos/ONs/FCI debajo (`PosicionesDetail.jsx` + `KpiDetailPanel.jsx`).
+- ✅ **Orden del tab Fundamental** con control compacto (chip ícono+etiqueta, cicla Posiciones/Tipo/% cartera). `utils/fundamentalOrder.js` + `FundSortControl.jsx`. Default = Posiciones.
+- ⏳ Validar v25 (texto táctico tras re-pegar + chip de orden).
+
 **Cierre:**
-- ⏳ **Merge `feat/rediseno-ux-mobile` → master** (pendiente de validación de v20 + web).
+- ⏳ **Merge `feat/rediseno-ux-mobile` → master** (pendiente de validación de v25 + web).
 
 ---
 

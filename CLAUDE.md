@@ -118,6 +118,7 @@ Schema completo de referencia en `MiCartera_estructura.json`.
 - La moneda de referencia para rendimiento real es USD MEP.
 - Antes de crear o modificar cualquier archivo, mencionar qué se va a hacer y esperar confirmación.
 - El archivo `cartera_app_v5b.html` es la referencia visual/UX — no copiar sus datos a código.
+- **Análisis (JSON de salida) → carpeta `AnalisisTactico_Y_Fundamental/`.** Cuando el usuario pida un análisis fundamental o táctico, el JSON resultante va ahí. Convención de nombre: `AF<DDMMYY>.json` (fundamental) y `AT<DDMMYY>.json` (táctico). Los **contratos** que rigen esos análisis son `analisis-fundamental.md` y `analisis-tactico-cp.md` (raíz) — esos son las *skills*, no los JSON.
 
 ## Variables de entorno
 
