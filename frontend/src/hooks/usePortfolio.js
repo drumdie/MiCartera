@@ -158,17 +158,24 @@ function withTipo(escenario) {
   return { ...escenario, tipo }
 }
 
-// Agrupación temática de tickers para el tab Fundamentales (referencia: cartera_app_v5b.html).
-// Los tickers que no estén acá caen al grupo por sector de yfinance / categoría.
+// Agrupación temática de tickers por SECTOR real (no por tipo de instrumento: que algo
+// sea CEDEAR ya se sabe y no aporta al análisis). Los tickers que no estén acá caen al
+// grupo por sector de yfinance / categoría.
 export const _GRUPO_TEMATICO = {
   YPFD: 'Energía · Upstream',           VIST:  'Energía · Upstream',
+  XOM:  'Energía · Upstream',
   TGSU2: 'Energía · Gas y Transmisión', TGNO4: 'Energía · Gas y Transmisión',
   TRAN: 'Energía · Gas y Transmisión',  PAMP:  'Energía · Gas y Transmisión',
   TXAR: 'Materiales',                   ALUA:  'Materiales',
-  LAR: 'CEDEARs Internacionales',       NVDA:  'CEDEARs Internacionales',
-  GOOGL: 'CEDEARs Internacionales',     XOM:   'CEDEARs Internacionales',
-  BHIP: 'Tácticos / Momentum',          COME:  'Tácticos / Momentum',
-  BYMA: 'Tácticos / Momentum',          BBD:   'Tácticos / Momentum',
+  LAR:  'Minería · Litio',
+  NVDA: 'Tecnología',                   GOOGL: 'Tecnología',
+  GGAL: 'Bancos y Financieras',         BHIP:  'Bancos y Financieras',
+  BBD:  'Bancos y Financieras',         NU:    'Bancos y Financieras',
+  BYMA: 'Bancos y Financieras',
+  HSY:  'Consumo Defensivo',
+  IRSA: 'Real Estate',
+  SPY:  'Índices y ETFs',               DIA:   'Índices y ETFs',
+  COME: 'Holdings',
 }
 
 // Orden en que se muestran los grupos temáticos (los no listados van después, alfabéticos).
@@ -176,8 +183,13 @@ export const _GRUPO_ORDEN = [
   'Energía · Upstream',
   'Energía · Gas y Transmisión',
   'Materiales',
-  'CEDEARs Internacionales',
-  'Tácticos / Momentum',
+  'Minería · Litio',
+  'Tecnología',
+  'Bancos y Financieras',
+  'Consumo Defensivo',
+  'Real Estate',
+  'Índices y ETFs',
+  'Holdings',
 ]
 
 export function usePortfolio(uid) {
