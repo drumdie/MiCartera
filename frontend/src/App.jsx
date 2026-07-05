@@ -8,6 +8,7 @@ import PerfilInversion from './pages/PerfilInversion'
 import MayorPosicionDetail from './pages/detail/MayorPosicionDetail'
 import GpDetail    from './pages/detail/GpDetail'
 import PosicionesDetail from './pages/detail/PosicionesDetail'
+import LiquidezDetail from './pages/detail/LiquidezDetail'
 import MepDetail   from './pages/detail/MepDetail'
 import RiesgoPaisDetail from './pages/detail/RiesgoPaisDetail'
 import Login       from './pages/Login'
@@ -81,6 +82,7 @@ function AuthGate() {
       <Route path="/detalle/mayor-posicion" element={<MayorPosicionDetail />} />
       <Route path="/detalle/gp"         element={<GpDetail />} />
       <Route path="/detalle/posiciones" element={<PosicionesDetail />} />
+      <Route path="/detalle/liquidez"   element={<LiquidezDetail />} />
       <Route path="/detalle/mep"        element={<MepDetail />} />
       <Route path="/detalle/rp"         element={<RiesgoPaisDetail />} />
       <Route path="*"                   element={<Navigate to="/" replace />} />

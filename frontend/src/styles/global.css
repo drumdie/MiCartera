@@ -33,7 +33,7 @@ body::before {
 .brand-sub { font-size: 9px; color: var(--muted); text-transform: uppercase; letter-spacing: .15em; margin-top: 4px; }
 
 /* Chip riesgo país */
-.rp-chip { display: inline-flex; align-items: center; gap: 5px; background: rgba(255,77,109,.08); border: 1px solid rgba(255,77,109,.2); border-radius: 99px; padding: 3px 8px; font-size: 9px; color: var(--red); margin-top: 5px; }
+.rp-chip { display: inline-flex; align-items: center; gap: 5px; background: rgba(255,77,109,.08); border: 1px solid rgba(255,77,109,.2); border-radius: 99px; padding: 3px 8px; font-size: 9px; font-family: inherit; color: var(--red); margin-top: 5px; }
 .rp-dot { width: 5px; height: 5px; border-radius: 50%; background: var(--red); animation: pulse 2s infinite; }
 @keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: .3; } }
 
@@ -204,6 +204,11 @@ body::before {
 .tg-val.neg  { color: var(--red); }
 .tg-val.warn { color: var(--warn); }
 .tr-tesis { font-size: 10px; color: var(--muted2); line-height: 1.6; padding-top: 8px; border-top: 1px solid var(--border); margin-top: 4px; }
+/* Mobile: expandido más legible — 2 columnas y tipografía ~2pp más grande. */
+.app-m .tr-grid  { grid-template-columns: repeat(2, 1fr); gap: 9px 12px; }
+.app-m .tg-label { font-size: 10px; }
+.app-m .tg-val   { font-size: 13px; }
+.app-m .tr-tesis { font-size: 12px; line-height: 1.55; }
 .tr-links { display: flex; gap: 6px; margin-top: 10px; flex-wrap: wrap; }
 .tr-link { display: inline-flex; align-items: center; gap: 4px; font-size: 9px; color: var(--accent3); text-decoration: none; background: rgba(74,158,255,.06); border: 1px solid rgba(74,158,255,.15); padding: 4px 9px; border-radius: 99px; }
 .tr-event-chip { display: inline-flex; align-items: center; gap: 4px; font-size: 9px; color: var(--warn); background: rgba(247,183,49,.06); border: 1px solid rgba(247,183,49,.15); padding: 3px 8px; border-radius: 99px; margin-top: 8px; }
@@ -303,6 +308,45 @@ body::before {
 .fc-kpi-val { font-family: 'IBM Plex Mono', monospace; font-size: 11px; font-weight: 600; color: var(--text); margin-top: 2px; }
 .fc-comparable { font-size: 9px; color: var(--muted); margin-bottom: 8px; }
 .fc-comparable-val { color: var(--warn); font-weight: 600; font-family: 'IBM Plex Mono', monospace; }
+
+/* Chip de visión (sentimiento) — reemplaza al badge táctico en la FundCard */
+.fc-visn { flex-shrink: 0; font-size: 9px; padding: 3px 9px; border-radius: 999px; background: var(--surface2); border: 1px solid var(--border2); color: var(--muted2); white-space: nowrap; }
+.fc-visn.bull { color: var(--buy);  border-color: rgba(0,229,160,.3);  background: rgba(0,229,160,.08); }
+.fc-visn.bear { color: var(--red);  border-color: rgba(244,63,94,.3);  background: rgba(244,63,94,.08); }
+
+/* Precio objetivo · consenso de analistas (dato duro de Yahoo) */
+.fc-target { background: rgba(74,158,255,.06); border: 1px solid rgba(74,158,255,.22); border-radius: 9px; padding: 10px 12px; margin-bottom: 8px; }
+.fc-target-cap { display: flex; align-items: center; gap: 5px; font-size: 8px; letter-spacing: .09em; text-transform: uppercase; color: #6d9fce; }
+.fc-target-main { display: flex; align-items: baseline; gap: 9px; flex-wrap: wrap; margin-top: 5px; }
+.fc-target-val { font-family: 'IBM Plex Mono', monospace; font-size: 17px; font-weight: 700; color: var(--text); }
+.fc-target-up { font-size: 12px; font-weight: 600; }
+.fc-target-ref { font-size: 9px; color: var(--muted); }
+.fc-target-foot { display: flex; justify-content: space-between; gap: 8px; flex-wrap: wrap; margin-top: 7px; font-size: 9px; color: var(--muted2); }
+
+/* Sub-etiqueta técnica de los KPIs (sigla bajo el nombre simple) */
+.fc-kpi-sub { font-size: 7px; color: var(--muted); margin-top: 1px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.fc-sce-cap { font-size: 8px; letter-spacing: .08em; text-transform: uppercase; color: var(--muted); margin-bottom: 4px; }
+
+/* Mobile: FundCard más legible (mismo criterio que el expandido de Posiciones) */
+.app-m .fc-name { font-size: 11px; }
+.app-m .fc-q1-text { font-size: 11px; }
+.app-m .fc-q1-fuente { font-size: 10px; }
+.app-m .fc-kpi-label { font-size: 9px; }
+.app-m .fc-kpi-sub { font-size: 8px; }
+.app-m .fc-kpi-val { font-size: 13px; }
+.app-m .fc-comparable { font-size: 11px; }
+.app-m .fc-ratio-label { font-size: 10px; }
+.app-m .fc-ratio-val { font-size: 13px; }
+.app-m .fc-tesis { font-size: 12px; line-height: 1.55; }
+.app-m .fc-sce-label { font-size: 10px; }
+.app-m .fc-sce-val { font-size: 13px; }
+.app-m .fc-ext { font-size: 12px; line-height: 1.6; }
+.app-m .fc-fuentes { font-size: 11px; }
+.app-m .fc-tv-btn { font-size: 12px; padding: 9px 12px; }
+.app-m .fc-visn { font-size: 10px; }
+.app-m .fc-target-val { font-size: 19px; }
+.app-m .fc-target-foot { font-size: 10px; }
+.app-m .fc-target-ref { font-size: 10px; }
 /* ── Catalizadores — header + form ── */
 .cat-header { display: flex; justify-content: space-between; align-items: center; margin: 8px 0 12px; }
 .cat-add-btn { font-size: 11px; font-weight: 600; background: rgba(0,229,160,.08); border: 1px solid rgba(0,229,160,.2); color: var(--accent); border-radius: 7px; padding: 5px 12px; cursor: pointer; transition: background .15s; }

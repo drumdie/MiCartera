@@ -41,6 +41,11 @@ const CAT_META = {
   bonos:       { name: 'Bonos',       color: '#f472b6' },
 }
 
+// Evita repetir el toast de sync al re-montar el dashboard (volver de un detalle / Perfil).
+// Solo se muestra cuando lastSync cambia a un valor NUEVO: el sync inicial (tras el
+// passphrase) o un sync manual con el botón central. Persiste a nivel módulo entre montajes.
+let _lastToastedSync = null
+
 export default function Dashboard() {
   const navigate = useNavigate()
   const location = useLocation()
@@ -95,7 +100,7 @@ export default function Dashboard() {
     try {
       await syncPPI()
     } catch {
-      showToast('No se pudo sincronizar con PPI')
+      showToast('No se pudo sincronizar con el broker')
     }
   }
 
@@ -129,14 +134,15 @@ export default function Dashboard() {
     }
   }
 
-  // Mostrar toast cuando se completa una sincronización con PPI.
+  // Toast SOLO cuando se completa un sync nuevo (inicial o manual), no al re-montar la vista.
   // setLastSync se llama DESPUÉS de refreshPortfolio en AppContext, así que
   // totalTickers ya refleja el estado real cuando este effect dispara.
   // eslint-disable-next-line react-hooks/exhaustive-deps
   useEffect(() => {
-    if (!lastSync) return
+    if (!lastSync || lastSync === _lastToastedSync) return
+    _lastToastedSync = lastSync
     const isEmpty = !isDemo && totalTickers === 0 && (portfolio?.liquidez?.detalle?.length ?? 0) === 0
-    showToast(isEmpty ? 'PPI sincronizado · cartera vacía' : '✓ Cartera sincronizada con PPI')
+    showToast(isEmpty ? 'Broker sincronizado · cartera vacía' : '✓ Cartera sincronizada con el broker')
   }, [lastSync])
 
   const handleAddCatalyst = async (e) => {
@@ -348,7 +354,7 @@ export default function Dashboard() {
                 <div className="state">
                   <i className="ti ti-refresh" aria-hidden="true" />
                   <div className="state-title">Sin sincronizar</div>
-                  <div className="state-desc">Sincronizá con PPI (botón central) para ver tu cartera actualizada.</div>
+                  <div className="state-desc">Sincronizá con tu broker (botón central) para ver tu cartera actualizada.</div>
                 </div>
               </div>
               )
@@ -398,6 +404,7 @@ export default function Dashboard() {
             <div className="kpis-mini">
               <KPICard
                 label="Liquidez"
+                onClick={() => navigate('/detalle/liquidez')}
                 value={`${liqPct.toFixed(2).replace('.', ',')}%`}
                 sub={<PrivacyMask>≈ USD {liqUSD.toLocaleString('es-AR')} · ARS {Math.round(liqARS / 1000)}K</PrivacyMask>}
                 className="warn"
@@ -448,7 +455,7 @@ export default function Dashboard() {
                 <div className="state">
                   <i className="ti ti-wallet" aria-hidden="true" />
                   <div className="state-title">Sin posiciones</div>
-                  <div className="state-desc">{isDemo ? 'Iniciá sesión para ver tu cartera real.' : 'Sincronizá con PPI (botón central) para traer tus posiciones.'}</div>
+                  <div className="state-desc">{isDemo ? 'Iniciá sesión para ver tu cartera real.' : 'Sincronizá con tu broker (botón central) para traer tus posiciones.'}</div>
                 </div>
               )}
 
@@ -486,7 +493,7 @@ export default function Dashboard() {
               <div className="state">
                 <i className={`ti ${hasFreshData ? 'ti-plug-off' : 'ti-refresh'}`} aria-hidden="true" />
                 <div className="state-title">{hasFreshData ? 'Sin posiciones' : 'Sin sincronizar'}</div>
-                <div className="state-desc">{hasFreshData ? 'Tu cartera no tiene posiciones activas.' : 'Sincronizá con PPI (botón central) para ver fundamentales.'}</div>
+                <div className="state-desc">{hasFreshData ? 'Tu cartera no tiene posiciones activas.' : 'Sincronizá con tu broker (botón central) para ver fundamentales.'}</div>
               </div>
             ) : (<>
             {fundamental.length === 0 ? (
@@ -535,7 +542,7 @@ export default function Dashboard() {
               <div className="state">
                 <i className={`ti ${hasFreshData ? 'ti-plug-off' : 'ti-refresh'}`} aria-hidden="true" />
                 <div className="state-title">{hasFreshData ? 'Sin posiciones' : 'Sin sincronizar'}</div>
-                <div className="state-desc">{hasFreshData ? 'Tu cartera no tiene posiciones activas.' : 'Sincronizá con PPI (botón central) para ver catalizadores.'}</div>
+                <div className="state-desc">{hasFreshData ? 'Tu cartera no tiene posiciones activas.' : 'Sincronizá con tu broker (botón central) para ver catalizadores.'}</div>
               </div>
             ) : (<>
             <div className="cat-header">
@@ -625,7 +632,7 @@ export default function Dashboard() {
               <div className="state">
                 <i className={`ti ${hasFreshData ? 'ti-plug-off' : 'ti-refresh'}`} aria-hidden="true" />
                 <div className="state-title">{hasFreshData ? 'Sin posiciones' : 'Sin sincronizar'}</div>
-                <div className="state-desc">{hasFreshData ? 'Tu cartera no tiene posiciones activas.' : 'Sincronizá con PPI (botón central) para ver gráficos.'}</div>
+                <div className="state-desc">{hasFreshData ? 'Tu cartera no tiene posiciones activas.' : 'Sincronizá con tu broker (botón central) para ver gráficos.'}</div>
               </div>
             ) : (<>
             <div className="eyebrow" style={{ margin: '8px 0 10px' }}>Seleccioná un ticker</div>
@@ -648,7 +655,7 @@ export default function Dashboard() {
         <footer>
           {isDemo
             ? 'Demo · Datos de ejemplo — no reales · No constituye asesoramiento financiero'
-            : 'MiCartera · Datos sincronizados desde PPI · No constituye asesoramiento financiero'}
+            : 'MiCartera · Datos sincronizados desde tu broker · No constituye asesoramiento financiero'}
         </footer>
       </main>
 

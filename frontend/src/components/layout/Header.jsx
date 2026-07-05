@@ -2,7 +2,8 @@ import { useNavigate } from 'react-router-dom'
 import { useApp } from '../../store/AppContext'
 import { formatARS } from '../../utils/formatters'
 
-export default function Header({ onSyncDone }) {
+// onDolarClick / onRpClick: abren el panel inline de tipos de cambio / riesgo país (web).
+export default function Header({ onSyncDone, onDolarClick, onRpClick }) {
   const navigate = useNavigate()
   const { cotizaciones, user, signOut, isDemo, hasFreshData, syncPPI, syncing, syncError, lastSync, isStale, ultimaSync } = useApp()
   const { dolar_mep, riesgo_pais_pb } = cotizaciones
@@ -10,7 +11,7 @@ export default function Header({ onSyncDone }) {
   const handleSync = async () => {
     try {
       await syncPPI()
-      onSyncDone?.('✓ Cartera sincronizada con PPI')
+      onSyncDone?.('✓ Cartera sincronizada con el broker')
     } catch {
       // syncError ya está en contexto; el botón refleja el estado
     }
@@ -76,16 +77,27 @@ export default function Header({ onSyncDone }) {
         </div>
 
         <div style={{ textAlign: 'right' }}>
-          <div style={{ fontSize: 9, color: 'var(--muted)', textTransform: 'uppercase', letterSpacing: '.1em' }}>
-            Dólar MEP
-          </div>
-          <div style={{ fontFamily: "'IBM Plex Mono', monospace", fontSize: 17, fontWeight: 600, color: 'var(--accent2)' }}>
-            {hasFreshData ? formatARS(dolar_mep) : '—'}
-          </div>
-          <div className="rp-chip">
+          <button
+            onClick={onDolarClick}
+            title="Ver tipos de cambio e histórico"
+            style={{ background: 'none', border: 'none', padding: 0, textAlign: 'right', cursor: onDolarClick ? 'pointer' : 'default', display: 'block', width: '100%' }}
+          >
+            <div style={{ fontSize: 9, color: 'var(--muted)', textTransform: 'uppercase', letterSpacing: '.1em' }}>
+              Dólar MEP {onDolarClick && <span style={{ opacity: .5 }}>▸</span>}
+            </div>
+            <div style={{ fontFamily: "'IBM Plex Mono', monospace", fontSize: 17, fontWeight: 600, color: 'var(--accent2)' }}>
+              {hasFreshData ? formatARS(dolar_mep) : '—'}
+            </div>
+          </button>
+          <button
+            className="rp-chip"
+            onClick={onRpClick}
+            title="Ver riesgo país e histórico"
+            style={{ cursor: onRpClick ? 'pointer' : 'default' }}
+          >
             <span className="rp-dot" />
             RP <span>{hasFreshData && riesgo_pais_pb != null ? riesgo_pais_pb : '—'}</span> pb
-          </div>
+          </button>
 
           {!isDemo && (
             <div style={{ display: 'flex', gap: 6, justifyContent: 'flex-end', marginTop: 6 }}>
@@ -93,7 +105,7 @@ export default function Header({ onSyncDone }) {
               <button
                 onClick={handleSync}
                 disabled={syncing}
-                title="Sincronizar posiciones desde PPI"
+                title="Sincronizar posiciones desde el broker"
                 style={{
                   background: 'none',
                   border: `1px solid ${syncing ? 'var(--muted)' : 'var(--accent)'}`,
@@ -109,7 +121,7 @@ export default function Header({ onSyncDone }) {
                   minWidth: 72,
                 }}
               >
-                {syncing ? 'Sync…' : '↻ PPI'}
+                {syncing ? 'Sync…' : '↻ Broker'}
               </button>
 
               {/* Botón salir */}

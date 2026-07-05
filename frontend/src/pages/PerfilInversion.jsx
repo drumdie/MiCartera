@@ -28,7 +28,7 @@ export default function PerfilInversion() {
         <div className="state">
           <i className="ti ti-target-off" aria-hidden="true" />
           <div className="state-title">Sin posiciones</div>
-          <div className="state-desc">Sincronizá tu cartera con PPI para definir el contrato de cada ticker.</div>
+          <div className="state-desc">Sincronizá tu cartera con el broker para definir el contrato de cada ticker.</div>
         </div>
       ) : (
         <>

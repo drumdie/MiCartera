@@ -329,3 +329,74 @@ async def refresh_cotizaciones(request: Request):
 
     ref.set(data)
     return {"status": "ok", "cotizaciones": data}
+
+
+# ── Series históricas (para los gráficos de MEP / CCL / riesgo país) ──────────
+# Fuente keyless argentinadatos.com (diaria). Cache en memoria por 1h: la serie es
+# diaria, no tiene sentido re-descargarla en cada request.
+_ARGDATOS = "https://api.argentinadatos.com/v1"
+_SERIE_TTL_SEC = 3600
+_serie_cache: dict[str, tuple[float, list]] = {}
+
+# indicador → (path argentinadatos, unidad). MEP=bolsa, CCL=contadoconliqui.
+_SERIE_SRC = {
+    "riesgo_pais": ("/finanzas/indices/riesgo-pais",        "pb"),
+    "mep":         ("/cotizaciones/dolares/bolsa",           "ARS"),
+    "ccl":         ("/cotizaciones/dolares/contadoconliqui", "ARS"),
+    "oficial":     ("/cotizaciones/dolares/oficial",         "ARS"),
+}
+
+
+async def _fetch_serie(indicador: str) -> list[dict]:
+    """Descarga la serie diaria de argentinadatos y la normaliza a [{fecha, valor}]."""
+    path, _ = _SERIE_SRC[indicador]
+    try:
+        async with httpx.AsyncClient(timeout=20, headers={"User-Agent": "MiCartera/1.0"}) as client:
+            resp = await client.get(f"{_ARGDATOS}{path}")
+            if not resp.is_success:
+                return []
+            raw = resp.json()
+    except Exception as exc:
+        print(f"[SERIE] Error {indicador}: {exc}")
+        return []
+
+    out: list[dict] = []
+    for p in raw:
+        fecha = p.get("fecha")
+        # riesgo país trae "valor"; los dólares traen "venta" (uso el valor de venta)
+        valor = p.get("valor") if indicador == "riesgo_pais" else p.get("venta")
+        if fecha and valor is not None:
+            out.append({"fecha": fecha, "valor": round(float(valor), 2)})
+    return out
+
+
+@router.get("/series/{indicador}")
+async def get_series(indicador: str, dias: int = 400):
+    """
+    Serie histórica diaria de un indicador para los gráficos del front.
+    indicador: riesgo_pais | mep | ccl. `dias` = cuántos puntos finales devolver.
+    """
+    indicador = indicador.lower()
+    if indicador not in _SERIE_SRC:
+        raise HTTPException(status_code=404, detail="indicador no soportado (riesgo_pais | mep | ccl)")
+
+    now = datetime.now(timezone.utc).timestamp()
+    cached = _serie_cache.get(indicador)
+    if cached and (now - cached[0]) < _SERIE_TTL_SEC:
+        serie = cached[1]
+    else:
+        serie = await _fetch_serie(indicador)
+        if serie:
+            _serie_cache[indicador] = (now, serie)
+        elif cached:
+            serie = cached[1]  # si falló la fuente, servir lo último cacheado
+
+    n = max(1, min(dias, 10000))   # "Máx" del front necesita la serie completa (RP llega a ~1998)
+    recorte = serie[-n:]
+    _, unidad = _SERIE_SRC[indicador]
+    return {
+        "indicador": indicador,
+        "unidad": unidad,
+        "fuente": "argentinadatos.com",
+        "serie": recorte,
+    }

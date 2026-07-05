@@ -34,7 +34,7 @@ export default function BottomNav({ active, onSelect, onSync, syncing = false, c
         className={`bottomnav-center ${syncing ? 'spinning' : ''}`}
         onClick={onSync}
         disabled={syncing || !canSync}
-        aria-label={syncing ? 'Sincronizando' : 'Sincronizar con PPI'}
+        aria-label={syncing ? 'Sincronizando' : 'Sincronizar con el broker'}
       >
         <i className="ti ti-refresh" aria-hidden="true" />
       </button>

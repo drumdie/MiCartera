@@ -138,8 +138,8 @@ export function AppProvider({ children }) {
         setLastSync(result.timestamp ?? new Date().toISOString())
       }
     } catch (err) {
-      setSyncError(err.message || 'Error al sincronizar con PPI')
-      setSyncDiag({ fatalError: err?.message || 'Error al sincronizar con PPI' })
+      setSyncError(err.message || 'Error al sincronizar con el broker')
+      setSyncDiag({ fatalError: err?.message || 'Error al sincronizar con el broker' })
       // Aunque el sync falle, intentar mostrar los datos que ya existen en Firestore.
       // Esto cubre reinstalaciones: SQLite vacío, pero Firestore tiene datos previos
       // descifrables ahora que la DEK está activa.

@@ -210,6 +210,24 @@ def _build_fundamental(info: dict, ticker: str, descripcion: str, categoria: str
     if total_debt and ebitda and ebitda > 0:
         debt_ebitda = round(total_debt / ebitda, 1)
 
+    # Precio objetivo consensuado por analistas (Yahoo). Queda en la MONEDA DE COTIZACIÓN
+    # del yf_ticker (USD para subyacentes de CEDEARs, ARS para .BA). El upside_pct compara
+    # target vs precio actual en la misma moneda → es agnóstico de moneda.
+    target_mean = info.get("targetMeanPrice")
+    precio_ref  = info.get("currentPrice") or info.get("regularMarketPrice")
+    analistas = None
+    if target_mean and precio_ref:
+        analistas = {
+            "target_medio":  round(float(target_mean), 2),
+            "target_alto":   info.get("targetHighPrice"),
+            "target_bajo":   info.get("targetLowPrice"),
+            "cantidad":      info.get("numberOfAnalystOpinions"),
+            "precio_ref":    round(float(precio_ref), 2),
+            "upside_pct":    round((float(target_mean) / float(precio_ref) - 1) * 100, 1),
+            "recomendacion": info.get("recommendationKey"),  # buy / hold / sell / strong_buy…
+            "moneda":        moneda_mkt,
+        }
+
     ratios = []
     if pe_trail is not None:
         ratios.append({"label": "P/E trailing", "value": f"{pe_trail:.1f}x", "quality": _q_pe(pe_trail)})
@@ -240,6 +258,8 @@ def _build_fundamental(info: dict, ticker: str, descripcion: str, categoria: str
         "ev_ebitda_quality": _q_ev_ebitda(ev_ebitda),
         "mg_ebitda":         mg_str,
         "ratios":            ratios,
+        # Consenso de analistas (dato duro de Yahoo, distinto de los escenarios IA)
+        "analistas":         analistas,
         # Campos Claude — null por defecto; se llenan via /analysis
         "accion_tactica": None,
         "sentimiento":    "neutral",
@@ -340,27 +360,43 @@ async def refresh_fundamentals(request: Request):
             "cedears_omitidos": cedears_omitidos,
         }
 
-    # Fetch en lotes de 5 simultáneos para no saturar Yahoo Finance
-    BATCH = 5
+    # Lotes CHICOS y espaciados: Yahoo rate-limitea ráfagas desde IPs de datacenter
+    # (Cloud Run). Con 5 simultáneos devolvía "Too Many Requests" para TODOS los tickers.
+    BATCH = 2
     results: list[dict] = []
-    sin_datos_tickers: list[str] = []
-    for i in range(0, len(tasks), BATCH):
-        batch = tasks[i:i + BATCH]
-        batch_res = await asyncio.gather(
-            *[_fetch_one(*t, dolar_mep=dolar_mep) for t in batch],
-            return_exceptions=True,
+
+    async def _run_batches(task_list: list[tuple]) -> list[tuple]:
+        """Corre los fetches en lotes espaciados; devuelve las tasks sin datos."""
+        fallidas: list[tuple] = []
+        for i in range(0, len(task_list), BATCH):
+            if i:
+                await asyncio.sleep(1.2)
+            batch = task_list[i:i + BATCH]
+            batch_res = await asyncio.gather(
+                *[_fetch_one(*t, dolar_mep=dolar_mep) for t in batch],
+                return_exceptions=True,
+            )
+            for t, res in zip(batch, batch_res):
+                if isinstance(res, dict):
+                    results.append(res)
+                else:
+                    fallidas.append(t)
+        return fallidas
+
+    fallidas = await _run_batches(tasks)
+    if fallidas:
+        # Reintento único tras una pausa: el rate-limit de Yahoo suele ceder en segundos.
+        logger.warning("Fundamentales: %d tickers sin datos — reintentando en 6s", len(fallidas))
+        await asyncio.sleep(6)
+        fallidas = await _run_batches(fallidas)
+
+    sin_datos_tickers = [t[1] for t in fallidas]
+    for t in fallidas:
+        # t = (yf_ticker, ticker, descripcion, categoria, subyacente)
+        logger.warning(
+            "Fundamentales: sin datos de Yahoo para %s (cat=%s, símbolo=%s)",
+            t[1], t[3], t[0],
         )
-        for t, res in zip(batch, batch_res):
-            if isinstance(res, dict):
-                results.append(res)
-            else:
-                # t = (yf_ticker, ticker, descripcion, categoria, subyacente)
-                sin_datos_tickers.append(t[1])
-                logger.warning(
-                    "Fundamentales: sin datos de Yahoo para %s (cat=%s, símbolo=%s)%s",
-                    t[1], t[3], t[0],
-                    f" — {res!r}" if isinstance(res, Exception) else "",
-                )
 
     fund_col = ref.collection("fundamentals")
     ok = 0

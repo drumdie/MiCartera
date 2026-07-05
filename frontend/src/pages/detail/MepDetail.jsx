@@ -1,6 +1,15 @@
 import { useApp } from '../../store/AppContext'
 import { formatARS } from '../../utils/formatters'
 import ScreenHeader from '../../components/layout/ScreenHeader'
+import SerieChart from '../../components/charts/SerieChart'
+import HistoryChart from '../../components/charts/HistoryChart'
+
+// Series del gráfico histórico de dólar (colores = los de la distribución)
+const SERIES_DOLAR = [
+  { id: 'mep',     label: 'MEP',     color: '#00e5a0' },
+  { id: 'ccl',     label: 'CCL',     color: '#4a9eff' },
+  { id: 'oficial', label: 'Oficial', color: '#f7b731' },
+]
 
 function RateRow({ label, value, sub, accent }) {
   return (
@@ -63,6 +72,7 @@ export default function MepDetail() {
             sub={dolar_mep && dolar_oficial ? `brecha vs MEP: ${((dolar_mep / dolar_oficial - 1) * 100).toFixed(1)}%` : undefined}
           />
         </div>
+        <HistoryChart titulo="Dólar · histórico" unidad="ARS" series={SERIES_DOLAR} defaultRango="3m" />
       </div>
 
       {riesgo_pais_pb != null && (
@@ -78,6 +88,7 @@ export default function MepDetail() {
               : undefined}
             accent={riesgo_pais_min != null && riesgo_pais_pb <= riesgo_pais_min}
           />
+          <SerieChart indicador="riesgo_pais" unidad="pb" />
         </div>
       )}
     </div>

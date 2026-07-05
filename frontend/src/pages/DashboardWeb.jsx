@@ -46,6 +46,9 @@ const CAT_META = {
   bonos:       { name: 'Bonos',       color: '#f472b6' },
 }
 
+// Evita repetir el toast de sync al re-montar el dashboard. Solo dispara con un lastSync NUEVO.
+let _lastToastedSync = null
+
 export default function Dashboard() {
   const { activeCurrency, distMode, setDistMode,
           cotizaciones, resumen, portfolio,
@@ -110,9 +113,11 @@ export default function Dashboard() {
     }
   }
 
-  // Mostrar toast cuando se completa una sincronización con PPI
+  // Toast SOLO con un sync nuevo (inicial o manual), no al re-montar la vista.
   useEffect(() => {
-    if (lastSync) showToast('✓ Cartera sincronizada con PPI')
+    if (!lastSync || lastSync === _lastToastedSync) return
+    _lastToastedSync = lastSync
+    showToast('✓ Cartera sincronizada con el broker')
   }, [lastSync])
 
   const handleAddCatalyst = async (e) => {
@@ -307,7 +312,11 @@ export default function Dashboard() {
 
   return (
     <div className="app">
-      <Header onSyncDone={showToast} />
+      <Header
+        onSyncDone={showToast}
+        onDolarClick={() => { setSelectedKpi('dolar'); window.scrollTo(0, 0) }}
+        onRpClick={() => { setSelectedKpi('riesgo_pais'); window.scrollTo(0, 0) }}
+      />
       <DemoBanner />
 
       {!hasFreshData ? (
@@ -318,7 +327,7 @@ export default function Dashboard() {
         <div style={{ textAlign: 'center', color: 'var(--text-muted, #888)', padding: '60px 16px' }}>
           <div style={{ fontSize: 40, marginBottom: 12, opacity: 0.5 }}>&#x21bb;</div>
           <div style={{ fontSize: 18, fontWeight: 600, marginBottom: 8 }}>Sin sincronizar</div>
-          <div>Sincronizá con PPI para ver tu cartera actualizada.</div>
+          <div>Sincronizá con tu broker para ver tu cartera actualizada.</div>
         </div>
         )
       ) : (<>
@@ -641,7 +650,7 @@ export default function Dashboard() {
       <footer>
         {isDemo
           ? 'Demo · Datos de ejemplo — no reales · No constituye asesoramiento financiero'
-          : 'MiCartera · Datos sincronizados desde PPI · No constituye asesoramiento financiero'}
+          : 'MiCartera · Datos sincronizados desde tu broker · No constituye asesoramiento financiero'}
       </footer>
 
       {/* ── MODAL ANÁLISIS PROFUNDO ── */}

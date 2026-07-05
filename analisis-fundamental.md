@@ -35,6 +35,7 @@ Todo eso es trabajo del análisis táctico por CP. Acá la **tesis es de la empr
 }
 ```
 - **NO** incluir `accion_tactica` (la define el táctico por CP).
+- **`escenarios` SIEMPRE con precio:** cada escenario ARRANCA con su precio objetivo ("$62 — desc" / "AR$450 — desc"). Si no hay base para un precio puntual, usar variación esperada ("−25% — desc"). NUNCA solo la descripción — la app muestra ese valor como el número del escenario.
 - `sentimiento` es sobre la empresa, no sobre la conveniencia de tenerla en cartera.
 - `fecha_analisis` = hoy → la app la muestra como "Análisis del DD/MM/YY".
 

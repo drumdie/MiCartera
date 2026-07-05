@@ -5,6 +5,7 @@ import {
   onSnapshotCatalysts,
   onSnapshotFundamentals,
   onSnapshotTacticoAnalisis,
+  onSnapshotContratos,
 } from '../services/portfolioService'
 import { apiGet } from '../services/apiClient'
 import {
@@ -188,6 +189,7 @@ export function usePortfolio(uid) {
   const [rawFundamentals,   setRawFundamentals]   = useState({})
   const [rankingTactico,    setRankingTactico]    = useState([])
   const [tacticoAnalisis,   setTacticoAnalisis]   = useState([])
+  const [contratos,         setContratos]         = useState({})
   const [loading,           setLoading]           = useState(true)
   const [readDiag,          setReadDiag]          = useState(null)
 
@@ -314,6 +316,12 @@ export function usePortfolio(uid) {
     })
   }, [uid])
 
+  // Contratos por ticker (banda mín/objetivo/máx del CP) → para la barra de banda por posición.
+  useEffect(() => {
+    if (!uid) return
+    return onSnapshotContratos(uid, setContratos)
+  }, [uid])
+
   // Stress test desde el backend — se puede refrescar manualmente con refreshStress()
   const fetchStress = useCallback(async () => {
     if (!uid) return
@@ -348,21 +356,40 @@ export function usePortfolio(uid) {
     const accionByTicker = {}
     for (const r of (rankingTactico ?? [])) if (r?.ticker && r?.accion) accionByTicker[r.ticker] = r.accion
     for (const a of (tacticoAnalisis ?? [])) if (a?.ticker && a?.accion_tactica) accionByTicker[a.ticker] = a.accion_tactica
-    const justifByTicker = {}
-    for (const a of (tacticoAnalisis ?? [])) if (a?.ticker && a?.justificacion) justifByTicker[a.ticker] = a.justificacion
+    // Análisis táctico completo por ticker → bloque estructurado en el detalle de la
+    // posición (justificación + salud de tesis + en contra + urgencia + condición).
+    const tactByTicker = {}
+    for (const a of (tacticoAnalisis ?? [])) if (a?.ticker) tactByTicker[a.ticker] = a
 
-    if (Object.keys(byTicker).length === 0 && Object.keys(accionByTicker).length === 0 && Object.keys(justifByTicker).length === 0) return base
+    if (Object.keys(byTicker).length === 0 && Object.keys(accionByTicker).length === 0 &&
+        Object.keys(tactByTicker).length === 0 && Object.keys(contratos ?? {}).length === 0) return base
 
     const enrich = (cat) => ({
       ...cat,
       posiciones: (cat.posiciones ?? []).map(p => {
         const f = byTicker[p.ticker]
+        const ta = tactByTicker[p.ticker]
         const accion = accionByTicker[p.ticker] ?? p.accion_tactica ?? f?.accion_tactica
         // Preferir la justificación táctica; caer a la tesis fundamental solo si aún no hay táctico.
-        const tesisCorta = justifByTicker[p.ticker] ?? f?.tesis
+        const tesisCorta = ta?.justificacion ?? f?.tesis
         const extra = {}
         if (accion && accion !== p.accion_tactica)       extra.accion_tactica = accion
         if (tesisCorta && tesisCorta !== p.tesis_corta)  extra.tesis_corta    = tesisCorta
+        // Bloque táctico estructurado (reemplaza al párrafo suelto cuando hay análisis).
+        if (ta) {
+          extra.tactico = {
+            salud_tesis:      ta.salud_tesis ?? null,
+            justificacion:    ta.justificacion ?? null,
+            en_contra:        ta.mejor_argumento_en_contra ?? null,
+            urgencia:         ta.urgencia ?? null,
+            condicion_espera: ta.condicion_espera ?? null,
+          }
+        }
+        // Banda del CP (mín/objetivo/máx) → barra visual en el detalle de la posición.
+        const c = contratos?.[p.ticker]
+        if (c && c.peso_min != null && c.peso_max != null) {
+          extra.banda = { min: c.peso_min, objetivo: c.peso_objetivo, max: c.peso_max }
+        }
         return Object.keys(extra).length ? { ...p, ...extra } : p
       }),
     })
@@ -375,7 +402,7 @@ export function usePortfolio(uid) {
       ons:         enrich(base.ons),
       fci:         enrich(base.fci),
     }
-  }, [rawPortfolio, cotizaciones, rawFundamentals, rankingTactico, tacticoAnalisis])
+  }, [rawPortfolio, cotizaciones, rawFundamentals, rankingTactico, tacticoAnalisis, contratos])
   const resumen = useMemo(() => computeResumen(portfolio), [portfolio])
 
   // Rendimiento de los últimos 30 días (o los días disponibles si hay menos historia).

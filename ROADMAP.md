@@ -229,8 +229,22 @@ Trabajo hecho que no estaba documentado. **Sin commitear aún** (commit tras val
 - ✅ **Orden del tab Fundamental** con control compacto (chip ícono+etiqueta, cicla Posiciones/Tipo/% cartera). `utils/fundamentalOrder.js` + `FundSortControl.jsx`. Default = Posiciones.
 - ⏳ Validar v25 (texto táctico tras re-pegar + chip de orden).
 
+**Sesión 2026-07-04/05 (gráficos históricos · consenso analistas · táctico estructurado · v26–v30):**
+- ✅ **v26 · Detalle de Liquidez en mobile** (`LiquidezDetail.jsx` + ruta `/detalle/liquidez` + KPI clickeable — paridad con web).
+- ✅ **v26 · Endpoint de series históricas** `GET /api/prices/series/{riesgo_pais|mep|ccl|oficial}` (argentinadatos keyless, cache 1h en memoria, hasta 10000 puntos) + `SerieChart` (mini-gráfico con rangos).
+- ✅ **v27/v28 · Barra de banda VERTICAL** (`BandaBar.jsx`): Máx/Obj/Mín con valores, punto del peso actual clavado en el borde si sale de banda; a la derecha del texto táctico. Grilla del expandido mobile 3→2 columnas + tipografía +2pp (`.app-m`).
+- ✅ **v29 · Fix toast repetido** (solo con `lastSync` nuevo, guard a nivel módulo) + **"PPI"→"broker"** en todos los textos user-facing (visión multibroker; queda "PPI" solo como hint de dónde sacar las keys).
+- ✅ **v30 · FundCard rediseñada:** chip "Visión", bloque **precio objetivo consenso de analistas** (campo `analistas` en `/fundamentals/refresh`: target medio/alto/bajo, upside vs actual, recomendación, moneda), escenarios "Pesimista/Base/Optimista · estimación IA", sin badge táctico, fuentes más grandes en mobile.
+- ✅ **v30 · HistoryChart estilo TradingView:** multi-línea MEP/CCL/Oficial + riesgo país, leyenda toggeable, crosshair táctil con tooltip, rangos 1M/3M/1A/5A/Máx (RP hasta ~1998). En MepDetail, RiesgoPaisDetail y panel web. Panel web "Tipos de cambio" + header web clickeable (MEP ▸ y chip RP).
+- ✅ **FIX CRÍTICO · yfinance rate-limited desde Cloud Run:** el refresh de fundamentales escribía 0 tickers desde el 13/06 (Yahoo bloqueaba IPs de GCP con "Too Many Requests" y el botón decía "✓" igual). Fix: `yfinance>=0.2.61` (impersonación curl_cffi) + lotes de 2 espaciados (1,2s) + reintento único (6s) + **toast honesto** (informa N actualizados o el rate-limit). Verificado post-fix: 15/22 tickers con `analistas` (los 7 restantes sin cobertura Yahoo).
+- ✅ **KPIs homogéneos en FundCard:** siempre los 3 recuadros fijos (Ganancia operativa · Valuación · Margen, yfinance); los KPIs variables del análisis IA pasan a chips secundarios. Bloque analistas pulido (singular "1 analista", sin "Recomendación: none", sin rango degenerado).
+- ✅ **Táctico · nueva comunicación:** bloque estructurado por posición (`position.tactico`): chips de **salud de tesis** + **urgencia** (con rótulo), justificación como texto, **"En contra:"** (mejor_argumento_en_contra) y **"Esperar:"** (condicion_espera) — datos que ya se guardaban y no se mostraban. Complementa la barra de banda.
+- ✅ **Contratos:** `analisis-fundamental.md` exige precio en cada escenario ("$X — desc"); `analisis-tactico-cp.md` pide justificación liderada por el porqué de fondo (banda como contexto liviano) y redacción para usuario final en los campos visibles.
+- ⏳ Escenarios con precio + justificaciones nuevas: aparecen al **regenerar** los análisis en claude.ai con los contratos actualizados.
+- ⏳ **APK v31** (este último batch es solo frontend; v30 no lo tiene).
+
 **Cierre:**
-- ⏳ **Merge `feat/rediseno-ux-mobile` → master** (pendiente de validación de v25 + web).
+- ⏳ **Merge `feat/rediseno-ux-mobile` → master** (pendiente de validación de v30/v31 + web).
 
 ---
 

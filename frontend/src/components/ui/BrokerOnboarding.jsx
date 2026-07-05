@@ -70,8 +70,8 @@ export function BrokerOnboarding({ onSubmit, onSkip }) {
       <form style={card} onSubmit={handleSubmit}>
         <div style={title}>Conectá tu broker</div>
         <div style={sub}>
-          Credenciales de PPI (panel → Gestiones → Gestión de servicio API). Se cifran en tu
-          dispositivo con tu passphrase antes de guardarse.
+          Credenciales de tu broker (en PPI: panel → Gestiones → Gestión de servicio API). Se cifran
+          en tu dispositivo con tu passphrase antes de guardarse.
         </div>
         <div style={{ display: 'grid', gap: 12 }}>
           {FIELDS.map(f => (

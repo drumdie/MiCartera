@@ -47,8 +47,8 @@ export default function BrokerCredentials({ uid, onClose, onSaved }) {
         <div className="sheet-handle" />
         <div className="appbar-title" style={{ textAlign: 'left', marginBottom: 4 }}>Credenciales del broker</div>
         <p style={{ fontSize: 12, color: 'var(--muted)', lineHeight: 1.5, marginBottom: 16 }}>
-          PPI → Gestiones → Gestión de servicio API. Por seguridad, las credenciales guardadas
-          NO se muestran: re-ingresá las 5 para reemplazarlas. Se cifran con tu passphrase (DEK).
+          En PPI: panel → Gestiones → Gestión de servicio API. Por seguridad, las credenciales
+          guardadas NO se muestran: re-ingresá las 5 para reemplazarlas. Se cifran con tu passphrase (DEK).
         </p>
 
         <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>

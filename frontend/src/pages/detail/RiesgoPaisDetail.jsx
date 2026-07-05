@@ -1,5 +1,8 @@
 import { useApp } from '../../store/AppContext'
 import ScreenHeader from '../../components/layout/ScreenHeader'
+import HistoryChart from '../../components/charts/HistoryChart'
+
+const SERIE_RP = [{ id: 'riesgo_pais', label: 'Riesgo país', color: '#00e5a0' }]
 
 function RateRow({ label, value, sub, accent }) {
   return (
@@ -69,6 +72,8 @@ export default function RiesgoPaisDetail() {
               sub={riesgo_pais_min_desde ? `desde ${riesgo_pais_min_desde}` : undefined}
             />
           )}
+
+          <HistoryChart titulo="Riesgo país · histórico" unidad="pb" series={SERIE_RP} defaultRango="1a" />
 
           <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 12, background: 'var(--blue-soft)', border: '1px solid var(--blue-line)', borderRadius: 'var(--r-md)', padding: '11px 12px' }}>
             <i className="ti ti-info-circle" style={{ color: 'var(--accent3)', fontSize: 16 }} aria-hidden="true" />

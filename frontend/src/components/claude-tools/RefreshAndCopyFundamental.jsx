@@ -15,11 +15,18 @@ export default function RefreshAndCopyFundamental({ onToast }) {
   const handle = async () => {
     setBusy(true)
     try {
-      await refreshFundamentals()
+      const result = await refreshFundamentals()
+      const ok  = result?.tickers_actualizados ?? 0
+      const sin = result?.tickers_sin_datos ?? 0
       // dar tiempo a que el onSnapshot traiga la data fresca antes de armar el prompt
       await new Promise(r => setTimeout(r, 900))
       await navigator.clipboard.writeText(buildFundamentalContext(fundRef.current))
-      onToast?.('✓ Fundamentales actualizados · prompt copiado')
+      // Toast honesto: si Yahoo rate-limiteó todo, avisar en vez de fingir éxito.
+      if (ok === 0) {
+        onToast?.('⚠ Yahoo no respondió (límite de consultas) — texto copiado con datos previos. Reintentá en unos minutos.')
+      } else {
+        onToast?.(`✓ ${ok} tickers actualizados${sin ? ` · ${sin} sin datos` : ''} · texto copiado`)
+      }
     } catch (err) {
       onToast?.(err?.message || 'No se pudo actualizar')
     } finally {

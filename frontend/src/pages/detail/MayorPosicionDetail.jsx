@@ -43,7 +43,7 @@ export default function MayorPosicionDetail() {
         <div className="state">
           <i className="ti ti-chart-pie-off" aria-hidden="true" />
           <div className="state-title">Sin posiciones</div>
-          <div className="state-desc">Sincronizá con PPI para ver tus mayores posiciones.</div>
+          <div className="state-desc">Sincronizá con tu broker para ver tus mayores posiciones.</div>
         </div>
       ) : (
         <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>

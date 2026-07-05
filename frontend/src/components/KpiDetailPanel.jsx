@@ -11,6 +11,14 @@ import {
 } from '../utils/formatters'
 import { _GRUPO_TEMATICO, _GRUPO_ORDEN } from '../hooks/usePortfolio'
 import PrivacyMask from './ui/PrivacyMask'
+import HistoryChart from './charts/HistoryChart'
+
+const SERIE_RP_WEB = [{ id: 'riesgo_pais', label: 'Riesgo país', color: '#00e5a0' }]
+const SERIES_DOLAR_WEB = [
+  { id: 'mep',     label: 'MEP',     color: '#00e5a0' },
+  { id: 'ccl',     label: 'CCL',     color: '#4a9eff' },
+  { id: 'oficial', label: 'Oficial', color: '#f7b731' },
+]
 
 const CAT_LABEL = {
   acciones_ar: 'Acción AR', cedears: 'CEDEAR', bonos: 'Bono', ons: 'ON', fci: 'FCI',
@@ -22,6 +30,7 @@ const PANEL_TITLE = {
   mayor_posicion: 'Mayores posiciones',
   gp:             'Ganancia / pérdida (USD MEP)',
   riesgo_pais:    'Riesgo país',
+  dolar:          'Tipos de cambio',
 }
 
 // ── Helpers de derivación (reutilizan la lógica de los detalles mobile) ──────
@@ -50,7 +59,7 @@ function MayorPosicionRows() {
   const maxPct = top.length ? Math.max(...top.map(pctOf)) : 0
 
   if (top.length === 0) {
-    return <div className="kpidp-empty">Sin posiciones. Sincronizá con PPI para ver tus mayores posiciones.</div>
+    return <div className="kpidp-empty">Sin posiciones. Sincronizá con tu broker para ver tus mayores posiciones.</div>
   }
 
   return (
@@ -255,6 +264,7 @@ function RiesgoPaisRows() {
           </div>
         )}
       </div>
+      <HistoryChart titulo="Riesgo país · histórico" unidad="pb" series={SERIE_RP_WEB} defaultRango="1a" />
       <div className="kpidp-note">
         El riesgo país mide el spread de los bonos soberanos sobre los Treasuries de EE.UU.
         {enMinimo ? ' Está en su mínimo del período registrado.' : ''}
@@ -306,12 +316,45 @@ function LiquidezRows() {
   )
 }
 
+function DolarRows() {
+  const { cotizaciones } = useApp()
+  const { dolar_mep, dolar_ccl, dolar_oficial } = cotizaciones
+
+  return (
+    <>
+      <div className="kpidp-rate-block">
+        <div className="kpidp-rate-cap">Dólar financiero</div>
+        <div className="kpidp-rate-row">
+          <div className="kpidp-rate-label">MEP (AL30)</div>
+          <div className="kpidp-rate-val" style={{ color: 'var(--accent2, var(--buy))' }}>{formatARS(dolar_mep)}</div>
+        </div>
+        <div className="kpidp-rate-row">
+          <div className="kpidp-rate-label">
+            CCL (Cable)
+            {dolar_mep > 0 && dolar_ccl > 0 && <div className="kpidp-rate-sub">brecha MEP: {((dolar_ccl / dolar_mep - 1) * 100).toFixed(1)}%</div>}
+          </div>
+          <div className="kpidp-rate-val">{formatARS(dolar_ccl)}</div>
+        </div>
+        <div className="kpidp-rate-row">
+          <div className="kpidp-rate-label">
+            Oficial (BNA)
+            {dolar_mep > 0 && dolar_oficial > 0 && <div className="kpidp-rate-sub">brecha vs MEP: {((dolar_mep / dolar_oficial - 1) * 100).toFixed(1)}%</div>}
+          </div>
+          <div className="kpidp-rate-val">{formatARS(dolar_oficial)}</div>
+        </div>
+      </div>
+      <HistoryChart titulo="Dólar · histórico" unidad="ARS" series={SERIES_DOLAR_WEB} defaultRango="3m" />
+    </>
+  )
+}
+
 const PANELS = {
   liquidez:       LiquidezRows,
   posiciones:     PosicionesRows,
   mayor_posicion: MayorPosicionRows,
   gp:             GpRows,
   riesgo_pais:    RiesgoPaisRows,
+  dolar:          DolarRows,
 }
 
 export default function KpiDetailPanel({ kpiId, onBack }) {

@@ -49,7 +49,7 @@ export default function Perfil() {
   }
 
   const handleSync = async () => {
-    try { await syncPPI(); showToast('✓ Sincronizado con PPI') }
+    try { await syncPPI(); showToast('✓ Sincronizado con el broker') }
     catch { showToast('No se pudo sincronizar') }
   }
 
@@ -133,7 +133,7 @@ export default function Perfil() {
             <i className="ti ti-plug-connected list-row-ic" style={{ color: 'var(--muted2)' }} aria-hidden="true" />
             <div className="list-row-main">
               <div className="list-row-title">Credenciales del broker</div>
-              <div className="list-row-sub">Ver y editar tus claves de PPI</div>
+              <div className="list-row-sub">Ver y editar tus claves del broker</div>
             </div>
             <i className="ti ti-chevron-right list-row-chev" aria-hidden="true" />
           </button>
@@ -141,7 +141,7 @@ export default function Perfil() {
         {!isDemo && (
           <button className="list-row" onClick={handleSync} disabled={syncing}>
             <i className={`ti ti-refresh list-row-ic ${syncing ? 'spin-ic' : ''}`} style={{ color: 'var(--muted2)' }} aria-hidden="true" />
-            <div className="list-row-main"><div className="list-row-title">{syncing ? 'Sincronizando…' : 'Sincronizar con PPI'}</div></div>
+            <div className="list-row-main"><div className="list-row-title">{syncing ? 'Sincronizando…' : 'Sincronizar con el broker'}</div></div>
           </button>
         )}
         <button className="list-row" onClick={signOut}>

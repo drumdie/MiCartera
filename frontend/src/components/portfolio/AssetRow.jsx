@@ -3,6 +3,55 @@ import { useCurrency } from '../../hooks/useCurrency'
 import { formatARS, formatARSPrice, formatUSD, formatPctShort } from '../../utils/formatters'
 import PrivacyMask from '../ui/PrivacyMask'
 import TacticalBadge, { tacticalBarClass } from './TacticalBadge'
+import BandaBar from './BandaBar'
+
+// Bloque táctico estructurado del detalle de una posición: salud de tesis + urgencia
+// como chips, la justificación como texto principal, y "en contra" / "esperar" como
+// líneas secundarias. Sale del análisis táctico por CP (no del fundamental).
+const SALUD_META = {
+  intacta:           ['Tesis intacta',    'var(--buy)'],
+  en_observacion:    ['En observación',   'var(--warn)'],
+  bajo_observacion:  ['En observación',   'var(--warn)'],
+  debilitada:        ['Tesis debilitada', 'var(--warn)'],
+  en_riesgo:         ['Tesis en riesgo',  'var(--red)'],
+  rota:              ['Tesis rota',       'var(--red)'],
+}
+const URG_META = {
+  alta:                 ['Urgencia: alta',  'var(--red)'],
+  media:                ['Urgencia: media', 'var(--warn)'],
+  baja:                 ['Urgencia: baja',  'var(--muted2)'],
+  sin_accion_inmediata: ['Sin apuro',       'var(--muted)'],
+}
+
+function TacticoResumen({ t }) {
+  const salud = SALUD_META[t.salud_tesis]
+  const urg   = URG_META[t.urgencia]
+  const chip = (label, color) => (
+    <span style={{ fontSize: 9, color, border: `1px solid ${color}`, opacity: .92, borderRadius: 999, padding: '1px 7px', whiteSpace: 'nowrap' }}>{label}</span>
+  )
+  return (
+    <div>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap', marginBottom: 6 }}>
+        <span style={{ fontSize: 9, textTransform: 'uppercase', letterSpacing: '.08em', color: 'var(--muted)' }}>Análisis táctico</span>
+        {salud && chip(salud[0], salud[1])}
+        {urg && chip(urg[0], urg[1])}
+      </div>
+      {t.justificacion && (
+        <div className="tr-tesis" style={{ border: 'none', margin: 0, paddingTop: 0 }}>{t.justificacion}</div>
+      )}
+      {t.en_contra && (
+        <div className="tr-tesis" style={{ border: 'none', margin: '6px 0 0', paddingTop: 0 }}>
+          <b style={{ color: 'var(--warn)', fontWeight: 600 }}>En contra:</b> {t.en_contra}
+        </div>
+      )}
+      {t.condicion_espera && t.condicion_espera !== '—' && (
+        <div className="tr-tesis" style={{ border: 'none', margin: '6px 0 0', paddingTop: 0 }}>
+          <b style={{ color: 'var(--accent3, var(--muted2))', fontWeight: 600 }}>Esperar:</b> {t.condicion_espera}
+        </div>
+      )}
+    </div>
+  )
+}
 
 export default function AssetRow({ position, expanded, onToggle, isCedear, isBono, isON, isFCI, isStale = false, syncDate = null }) {
   const { activeCurrency, getRend, convert, convertPrice, curLabel } = useCurrency()
@@ -241,8 +290,25 @@ export default function AssetRow({ position, expanded, onToggle, isCedear, isBon
           )}
         </div>
 
-        {position.tesis_corta && (
-          <div className="tr-tesis">{position.tesis_corta}</div>
+        {(position.tactico || position.tesis_corta || position.banda) && (
+          <div style={{ display: 'flex', gap: 12, alignItems: 'stretch', borderTop: '1px solid var(--border)', paddingTop: 10, marginTop: 4 }}>
+            {(position.tactico || position.tesis_corta) && (
+              <div style={{ flex: 1, minWidth: 0 }}>
+                {position.tactico
+                  ? <TacticoResumen t={position.tactico} />
+                  : <div className="tr-tesis" style={{ border: 'none', margin: 0, paddingTop: 0 }}>{position.tesis_corta}</div>}
+              </div>
+            )}
+            {position.banda && (
+              <BandaBar
+                ticker={position.ticker}
+                min={position.banda.min}
+                objetivo={position.banda.objetivo}
+                max={position.banda.max}
+                actual={position.pct_cartera}
+              />
+            )}
+          </div>
         )}
 
         {position.evento_proximo && (

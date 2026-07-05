@@ -20,7 +20,7 @@ La misma posición puede merecer distinta acción según:
 - **Fechas de catalizadores:** si hay uno cercano, cambia la urgencia o la `condicion_espera` (ej. "esperar balance Q2 del DD/MM").
 
 ## Reglas de razonamiento
-1. NO recomendar sin citar **peso actual vs banda** y el **rol** declarado en el CP.
+1. La `justificacion` DEBE **liderar con el porqué de fondo** (negocio / tesis / momento del precio / resultado), en **lenguaje simple para un usuario común**. El **peso vs banda es UN factor**, no el titular: la app ya muestra la banda con una **barra visual**, así que NO hace falta explicarla con números — mencionala como contexto ("está algo por debajo de tu objetivo", "ya se pasó de tu tope"), no como el argumento central. Evitá que parezca que todo se reduce al % objetivo (que es una intención dinámica, no la razón).
 2. Ponderar **Objetivos (CP) × % cartera × resultado**:
    - Core / convicción alta + subió fuerte → MANTENER; entrada en correcciones.
    - Core + sobreponderada → recortar SOLO el excedente, no la tesis.
@@ -41,7 +41,7 @@ La misma posición puede merecer distinta acción según:
       "salud_tesis": "intacta | bajo_observacion | en_riesgo | rota",
       "mejor_argumento_en_contra": "El dato más fuerte HOY en contra de la posición.",
       "accion_tactica": "comprar | mantener | tomar_parcial | vender",
-      "justificacion": "Cruzá CP + números + fundamental + cartera. Citá peso vs banda y el catalizador relevante con su fecha.",
+      "justificacion": "2–4 oraciones en lenguaje simple: por qué esta acción (negocio/tesis/momento/resultado) PRIMERO; la banda como contexto liviano ('algo por debajo de tu objetivo'), NO como el argumento central; catalizador relevante con su fecha si aplica.",
       "urgencia": "alta | media | baja | sin_accion_inmediata",
       "condicion_espera": "Opcional: qué esperar (ej. balance Q2 del DD/MM) si la acción es mantener/observar."
     }
@@ -61,6 +61,9 @@ La misma posición puede merecer distinta acción según:
 
 ## Anti-desfase de los números de cartera
 Los `%` y precios reflejan el momento del análisis. La app los re-renderiza en vivo; por eso en `justificacion`/`motivo` se puede citar el peso ("sobre su banda 8–12%") pero **el número exacto que se muestra lo recalcula la app** con el dato actual. Clave: `fecha_analisis` (se muestra "Táctico del DD/MM/YY").
+
+## Cómo se escribe (la app los muestra tal cual)
+`justificacion`, `mejor_argumento_en_contra` y `condicion_espera` se muestran **directo al usuario final** bajo cada posición (bloque "Análisis táctico": la justificación como texto principal, "En contra:" y "Esperar:" como líneas secundarias, más chips de salud de tesis y urgencia). Escribirlos como frases cortas y claras para un inversor no técnico — sin jerga interna ni referencias al contrato/JSON.
 
 ## Cómo se muestra
 Se pega con **"Pegar JSON"** en el Ranking táctico (Perfil de Inversión) → `ranking_tactico` ordena por impacto; `analisis_tactico` da la acción + justificación por posición. El **badge táctico** de cada posición (en Posiciones/Fundamental) sale de acá, no del fundamental.

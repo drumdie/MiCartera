@@ -37,7 +37,7 @@ export function DataContract({ onAccept }) {
         <div style={panel}>
           <span style={h}>Qué guardamos</span>
           Tus posiciones y cartera, los contratos de inversión que definas, y las credenciales
-          de tu broker (PPI) que cargues.
+          de tu broker que cargues.
 
           <span style={h}>Cómo se protege</span>
           Tus datos se cifran <b>en tu dispositivo</b> con tu passphrase, antes de subirse.
@@ -45,14 +45,14 @@ export function DataContract({ onAccept }) {
           solo viajan y se almacenan como texto cifrado.
 
           <span style={h}>El rol del backend</span>
-          Nuestro servidor actúa únicamente como <b>intermediario</b> con PPI: usa tus
+          Nuestro servidor actúa únicamente como <b>intermediario</b> con tu broker: usa tus
           credenciales para traer tus datos de mercado y posiciones. No almacena tus
           credenciales en claro ni las comparte con terceros.
 
           <span style={h}>Tu responsabilidad</span>
           La passphrase y el código de recuperación son tuyos y no los conocemos. Si perdés
           <b> ambos</b>, los datos cifrados no se pueden recuperar (tu cartera se puede volver
-          a sincronizar desde PPI, pero lo que escribas vos —tesis, contratos— se pierde).
+          a sincronizar desde tu broker, pero lo que escribas vos —tesis, contratos— se pierde).
 
           <span style={h}>Terceros</span>
           No vendemos ni compartimos tus datos con terceros.

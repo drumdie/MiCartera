@@ -5,5 +5,7 @@ pydantic-settings==2.3.4
 firebase-admin==6.5.0
 httpx==0.27.0
 python-dotenv==1.0.1
-yfinance==0.2.54
+# >=0.2.61: impersonación de browser (curl_cffi) robusta — evita el "Too Many Requests"
+# de Yahoo contra IPs de datacenter (Cloud Run).
+yfinance>=0.2.61
 cryptography==47.0.0
