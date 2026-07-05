@@ -400,3 +400,53 @@ async def get_series(indicador: str, dias: int = 400):
         "fuente": "argentinadatos.com",
         "serie": recorte,
     }
+
+
+# ── Serie histórica de un TICKER (gráfico de precio por posición) ─────────────
+# yfinance con caché larga por ticker: se consulta on-demand (al expandir una posición)
+# y se cachea 6h para no gatillar el rate-limit de Yahoo.
+import re as _re
+
+_TICKER_TTL_SEC = 6 * 3600
+_ticker_cache: dict[str, tuple[float, list]] = {}
+_TICKER_RE = _re.compile(r"^[A-Z0-9.\-^=]{1,12}$")
+
+
+def _fetch_ticker_history_sync(yf_ticker: str) -> list[dict]:
+    """Cierres diarios de los últimos 5 años vía yfinance → [{fecha, valor}]."""
+    try:
+        import yfinance as yf
+        h = yf.Ticker(yf_ticker).history(period="5y", interval="1d", auto_adjust=True)
+        out: list[dict] = []
+        for idx, row in h.iterrows():
+            c = row.get("Close")
+            if c is not None and c == c:   # descarta NaN
+                out.append({"fecha": idx.strftime("%Y-%m-%d"), "valor": round(float(c), 2)})
+        return out
+    except Exception as exc:
+        print(f"[TICKER-SERIE] Error {yf_ticker}: {exc}")
+        return []
+
+
+@router.get("/ticker-series/{yf_ticker}")
+async def get_ticker_series(yf_ticker: str, dias: int = 400):
+    """Serie de precio de un ticker (símbolo Yahoo: XOM, YPFD.BA, …) para el gráfico
+    del detalle de la posición. Cierres diarios, hasta 5 años."""
+    key = yf_ticker.strip().upper()
+    if not _TICKER_RE.match(key):
+        raise HTTPException(status_code=400, detail="símbolo inválido")
+
+    now = datetime.now(timezone.utc).timestamp()
+    cached = _ticker_cache.get(key)
+    if cached and (now - cached[0]) < _TICKER_TTL_SEC:
+        serie = cached[1]
+    else:
+        loop = asyncio.get_event_loop()
+        serie = await loop.run_in_executor(None, _fetch_ticker_history_sync, key)
+        if serie:
+            _ticker_cache[key] = (now, serie)
+        elif cached:
+            serie = cached[1]
+
+    n = max(1, min(dias, 10000))
+    return {"ticker": key, "fuente": "yahoo", "serie": serie[-n:]}

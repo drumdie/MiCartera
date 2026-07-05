@@ -376,6 +376,16 @@ export function usePortfolio(uid) {
     if (Object.keys(byTicker).length === 0 && Object.keys(accionByTicker).length === 0 &&
         Object.keys(tactByTicker).length === 0 && Object.keys(contratos ?? {}).length === 0) return base
 
+    // Próximo catalizador por ticker (fecha >= hoy), para la grilla del bloque táctico.
+    const hoyISO = new Date().toISOString().slice(0, 10)
+    const proxCatByTicker = {}
+    for (const cat of [...(catalizadores ?? [])].sort((a, b) => String(a.fecha).localeCompare(String(b.fecha)))) {
+      if (!cat?.fecha || String(cat.fecha) < hoyISO) continue
+      for (const t of (cat.tickers_afectados ?? [])) {
+        if (t && !proxCatByTicker[t]) proxCatByTicker[t] = { fecha: cat.fecha, evento: cat.evento }
+      }
+    }
+
     const enrich = (cat) => ({
       ...cat,
       posiciones: (cat.posiciones ?? []).map(p => {
@@ -397,11 +407,22 @@ export function usePortfolio(uid) {
             condicion_espera: ta.condicion_espera ?? null,
           }
         }
-        // Banda del CP (mín/objetivo/máx) → barra visual en el detalle de la posición.
+        // Banda del CP (mín/objetivo/máx) + rol declarado → grilla del bloque táctico.
         const c = contratos?.[p.ticker]
         if (c && c.peso_min != null && c.peso_max != null) {
           extra.banda = { min: c.peso_min, objetivo: c.peso_objetivo, max: c.peso_max }
         }
+        if (c?.rol) extra.rol = c.rol
+        // Datos de contexto para el detalle: catalizador próximo, consenso, símbolo Yahoo.
+        if (proxCatByTicker[p.ticker]) extra.prox_catalizador = proxCatByTicker[p.ticker]
+        if (f?.analistas?.target_medio != null) {
+          extra.analistas_res = {
+            target: f.analistas.target_medio,
+            upside: f.analistas.upside_pct ?? null,
+            moneda: f.analistas.moneda ?? null,
+          }
+        }
+        if (f?.yf_ticker) extra.yf_ticker = f.yf_ticker
         return Object.keys(extra).length ? { ...p, ...extra } : p
       }),
     })
@@ -414,7 +435,7 @@ export function usePortfolio(uid) {
       ons:         enrich(base.ons),
       fci:         enrich(base.fci),
     }
-  }, [rawPortfolio, cotizaciones, rawFundamentals, rankingTactico, tacticoAnalisis, contratos])
+  }, [rawPortfolio, cotizaciones, rawFundamentals, rankingTactico, tacticoAnalisis, contratos, catalizadores])
   const resumen = useMemo(() => computeResumen(portfolio), [portfolio])
 
   // Rendimiento de los últimos 30 días (o los días disponibles si hay menos historia).

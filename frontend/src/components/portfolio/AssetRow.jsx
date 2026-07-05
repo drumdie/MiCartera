@@ -4,6 +4,8 @@ import { formatARS, formatARSPrice, formatUSD, formatPctShort } from '../../util
 import PrivacyMask from '../ui/PrivacyMask'
 import TacticalBadge, { tacticalBarClass } from './TacticalBadge'
 import BandaBar from './BandaBar'
+import HistoryChart from '../charts/HistoryChart'
+import { ROL_LABELS } from '../../data/contratoConfig'
 
 // Bloque táctico estructurado del detalle de una posición: salud de tesis + urgencia
 // como chips, la justificación como texto principal, y "en contra" / "esperar" como
@@ -23,19 +25,64 @@ const URG_META = {
   sin_accion_inmediata: ['Sin apuro',       'var(--muted)'],
 }
 
-function TacticoResumen({ t }) {
+const _fmtDDMM = (iso) => {
+  const [, m, d] = String(iso).split('-')
+  return d ? `${d}/${m}` : iso
+}
+const _pref = (m) => m === 'ARS' ? 'AR$' : m === 'USD' ? 'US$' : '$'
+
+// Bloque táctico completo del expandido: chips → grilla de datos del contrato/contexto
+// (rol, rendimiento, catalizador, consenso, peso vs banda como UN dato más) → textos.
+function TacticoResumen({ position }) {
+  const t = position.tactico ?? {}
   const salud = SALUD_META[t.salud_tesis]
   const urg   = URG_META[t.urgencia]
   const chip = (label, color) => (
     <span style={{ fontSize: 9, color, border: `1px solid ${color}`, opacity: .92, borderRadius: 999, padding: '1px 7px', whiteSpace: 'nowrap' }}>{label}</span>
   )
+
+  const rol   = position.rol ? (ROL_LABELS[position.rol] ?? position.rol) : null
+  const rend  = position.rend_total_usd_pct ?? position.rend_usd_pct ?? null
+  const cat   = position.prox_catalizador
+  const an    = position.analistas_res
+  const item = (label, val, color) => (
+    <div>
+      <div style={{ fontSize: 9, color: 'var(--muted)', textTransform: 'uppercase', letterSpacing: '.06em' }}>{label}</div>
+      <div style={{ fontSize: 12, color: color ?? 'var(--text)', marginTop: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{val}</div>
+    </div>
+  )
+  const hayGrilla = rol || rend != null || cat || an || position.banda
+
   return (
     <div>
-      <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap', marginBottom: 6 }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap', marginBottom: 8 }}>
         <span style={{ fontSize: 9, textTransform: 'uppercase', letterSpacing: '.08em', color: 'var(--muted)' }}>Análisis táctico</span>
+        {position.accion_tactica && <TacticalBadge accion={position.accion_tactica} />}
         {salud && chip(salud[0], salud[1])}
         {urg && chip(urg[0], urg[1])}
       </div>
+
+      {hayGrilla && (
+        <div style={{
+          display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px 14px',
+          background: 'var(--surface2)', border: '1px solid var(--border)',
+          borderRadius: 'var(--r-sm)', padding: '9px 11px', marginBottom: 10,
+        }}>
+          {rol && item('Rol en tu contrato', rol)}
+          {rend != null && item('Rend. total USD', `${rend >= 0 ? '+' : ''}${Number(rend).toFixed(1).replace('.', ',')}%`, rend >= 0 ? 'var(--buy)' : 'var(--red)')}
+          {cat && item('Próx. catalizador', `${cat.evento} · ${_fmtDDMM(cat.fecha)}`)}
+          {an && item('Consenso analistas', `${_pref(an.moneda)} ${Number(an.target).toLocaleString('es-AR')}${an.upside != null ? ` · ${an.upside >= 0 ? '+' : ''}${Number(an.upside).toFixed(1).replace('.', ',')}%` : ''}`)}
+          {position.banda && (
+            <BandaBar
+              min={position.banda.min}
+              objetivo={position.banda.objetivo}
+              max={position.banda.max}
+              actual={position.pct_cartera}
+            />
+          )}
+        </div>
+      )}
+
       {t.justificacion && (
         <div className="tr-tesis" style={{ border: 'none', margin: 0, paddingTop: 0 }}>{t.justificacion}</div>
       )}
@@ -291,23 +338,27 @@ export default function AssetRow({ position, expanded, onToggle, isCedear, isBon
         </div>
 
         {(position.tactico || position.tesis_corta || position.banda) && (
-          <div style={{ display: 'flex', gap: 12, alignItems: 'stretch', borderTop: '1px solid var(--border)', paddingTop: 10, marginTop: 4 }}>
-            {(position.tactico || position.tesis_corta) && (
-              <div style={{ flex: 1, minWidth: 0 }}>
-                {position.tactico
-                  ? <TacticoResumen t={position.tactico} />
-                  : <div className="tr-tesis" style={{ border: 'none', margin: 0, paddingTop: 0 }}>{position.tesis_corta}</div>}
-              </div>
-            )}
-            {position.banda && (
-              <BandaBar
-                ticker={position.ticker}
-                min={position.banda.min}
-                objetivo={position.banda.objetivo}
-                max={position.banda.max}
-                actual={position.pct_cartera}
-              />
-            )}
+          <div style={{ borderTop: '1px solid var(--border)', paddingTop: 10, marginTop: 4 }}>
+            {(position.tactico || position.banda)
+              ? <TacticoResumen position={position} />
+              : <div className="tr-tesis" style={{ border: 'none', margin: 0, paddingTop: 0 }}>{position.tesis_corta}</div>}
+          </div>
+        )}
+
+        {/* Gráfico de precio del ticker (solo renta variable; se busca recién al expandir) */}
+        {expanded && !isBono && !isON && !isFCI && position.yf_ticker && (
+          <div style={{ borderTop: '1px solid var(--border)', marginTop: 12, paddingTop: 2 }}>
+            <HistoryChart
+              titulo={`Precio · ${position.ticker}`}
+              unidad=""
+              defaultRango="3m"
+              series={[{
+                id: `tk-${position.yf_ticker}`,
+                label: position.ticker,
+                color: '#00e5a0',
+                path: `/api/prices/ticker-series/${encodeURIComponent(position.yf_ticker)}?dias=10000`,
+              }]}
+            />
           </div>
         )}
 

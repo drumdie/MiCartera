@@ -48,6 +48,9 @@ function nearestIdx(pts, t) {
   return (t - pts[lo].t) < (pts[hi].t - t) ? lo : hi
 }
 
+// Caché a nivel módulo: al colapsar/expandir una posición no se re-descarga la serie.
+const _fetchCache = {}
+
 export default function HistoryChart({ titulo, series, unidad = 'ARS', defaultRango = '3m' }) {
   const [data, setData]   = useState(null)      // { id: [{t, valor}] } | null cargando | {} error
   const [rango, setRango] = useState(defaultRango)
@@ -57,11 +60,18 @@ export default function HistoryChart({ titulo, series, unidad = 'ARS', defaultRa
 
   useEffect(() => {
     let alive = true
-    Promise.all(series.map(s =>
-      apiGet(`/api/prices/series/${s.id}?dias=10000`)
-        .then(d => [s.id, (d?.serie ?? []).map(p => ({ t: Date.parse(p.fecha), valor: p.valor })).filter(p => Number.isFinite(p.t))])
+    Promise.all(series.map(s => {
+      // `path` opcional por serie (p.ej. /api/prices/ticker-series/XOM); default: indicador macro.
+      const url = s.path ?? `/api/prices/series/${s.id}?dias=10000`
+      if (_fetchCache[url]) return Promise.resolve([s.id, _fetchCache[url]])
+      return apiGet(url)
+        .then(d => {
+          const pts = (d?.serie ?? []).map(p => ({ t: Date.parse(p.fecha), valor: p.valor })).filter(p => Number.isFinite(p.t))
+          if (pts.length) _fetchCache[url] = pts
+          return [s.id, pts]
+        })
         .catch(() => [s.id, []])
-    )).then(entries => { if (alive) setData(Object.fromEntries(entries)) })
+    })).then(entries => { if (alive) setData(Object.fromEntries(entries)) })
     return () => { alive = false }
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [series.map(s => s.id).join(',')])

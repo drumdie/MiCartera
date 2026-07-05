@@ -27,12 +27,41 @@ const KPI_META = {
 }
 const kpiMeta = (key) => KPI_META[key] ?? [String(key).replace(/_/g, ' '), null]
 
-// Escenario puede ser string directo ("$55–70") u objeto v7 ({ precio, prob, desc })
-function scenarioPrice(val) {
+// Escenario: string "\$115 — desc" (contrato actual) u objeto v7 ({ precio, desc }).
+// Separa precio (grande) de descripción (texto diferenciado).
+function parseEscenario(val) {
   if (!val) return null
-  if (typeof val === 'string') return val
-  return val.precio ?? null
+  if (typeof val !== 'string') return { precio: val.precio ?? null, desc: val.desc ?? null }
+  for (const sep of [' — ', ' – ', ' - ']) {
+    const i = val.indexOf(sep)
+    if (i > 0) return { precio: val.slice(0, i).trim(), desc: val.slice(i + sep.length).trim() }
+  }
+  return { precio: val.trim(), desc: null }
 }
+
+// % implícito del escenario vs precio actual (de Yahoo). Solo si el precio del escenario
+// es numérico, hay referencia, y el resultado es razonable (así filtra monedas mezcladas).
+function upsideEscenario(precioStr, ref) {
+  if (!precioStr || !ref || precioStr.includes('%')) return null
+  const clean = String(precioStr).replace(/\.(?=\d{3}\b)/g, '').replace(',', '.')
+  const nums = (clean.match(/\d+(?:\.\d+)?/g) || []).map(Number).filter(n => n > 0)
+  if (!nums.length) return null
+  const avg = nums.reduce((a, b) => a + b, 0) / nums.length
+  const pct = (avg / ref - 1) * 100
+  return (Number.isFinite(pct) && Math.abs(pct) <= 300) ? pct : null
+}
+
+const ESC_META = [
+  ['bear', 'Pesimista', 'var(--red)'],
+  ['base', 'Base',      'var(--warn)'],
+  ['bull', 'Optimista', 'var(--buy)'],
+]
+
+// KPIs del análisis IA que duplican los recuadros fijos / ratios de Yahoo → no repetir.
+const KPI_DUP = new Set([
+  'ebitda_ttm', 'ev_ebitda', 'mg_ebitda', 'margen_ebitda', 'pe', 'p_e',
+  'pe_trailing', 'pe_fwd', 'roe', 'mg_bruto', 'margen_bruto', 'crec_ingresos', 'deuda_ebitda',
+])
 
 const monedaPrefix = (m) => m === 'ARS' ? 'AR$' : m === 'USD' ? 'US$' : (m ? `${m} ` : '$')
 const fmtNum = (v) => Number(v).toLocaleString('es-AR', { maximumFractionDigits: 2 })
@@ -74,11 +103,12 @@ export default function FundCard({ position }) {
     ['ev_ebitda',  ev_ebitda],
     ['mg_ebitda',  mg_ebitda],
   ].filter(([, v]) => v != null && v !== '')
-  const kpisIA = kpis ? Object.entries(kpis).filter(([, v]) => v != null && v !== '') : []
+  // UNA sola fila de chips: ratios de Yahoo + extras del análisis IA (sin duplicados, máx 4)
+  const kpisIA = kpis
+    ? Object.entries(kpis).filter(([k, v]) => v != null && v !== '' && !KPI_DUP.has(k)).slice(0, 4)
+    : []
 
-  const bearVal = scenarioPrice(escenarios.bear)
-  const baseVal = scenarioPrice(escenarios.base)
-  const bullVal = scenarioPrice(escenarios.bull)
+  const tieneEscenarios = !!(escenarios && (escenarios.bear || escenarios.base || escenarios.bull))
 
   // Bloque de analistas: solo si hay target (no todos los papeles tienen cobertura)
   const an = analistas && analistas.target_medio ? analistas : null
@@ -148,7 +178,7 @@ export default function FundCard({ position }) {
         </div>
       )}
 
-      {/* KPIs con doble etiqueta (nombre simple + sigla técnica) */}
+      {/* KPIs homogéneos: 3 recuadros fijos; el comparable vive DENTRO de Valuación */}
       {kpiEntries.length > 0 && (
         <div className="fc-kpis">
           {kpiEntries.map(([key, value]) => {
@@ -158,15 +188,26 @@ export default function FundCard({ position }) {
                 <div className="fc-kpi-label">{label}</div>
                 {sub && <div className="fc-kpi-sub">{sub}</div>}
                 <div className="fc-kpi-val">{value}</div>
+                {key === 'ev_ebitda' && comparable_ev_ebitda && (
+                  <div style={{ fontSize: 8, color: 'var(--warn)', marginTop: 2 }}>
+                    vs {comparable_ev_ebitda.nombre}: {comparable_ev_ebitda.valor}
+                  </div>
+                )}
               </div>
             )
           })}
         </div>
       )}
 
-      {/* KPIs variables del análisis IA (distintos por empresa) → chips secundarios */}
-      {kpisIA.length > 0 && (
-        <div className="fc-ratios" style={{ marginTop: 2 }}>
+      {/* UNA fila de chips: ratios Yahoo + extras del análisis IA (deduplicados) */}
+      {(ratios.length > 0 || kpisIA.length > 0) && (
+        <div className="fc-ratios" style={{ marginBottom: 10 }}>
+          {ratios.map(r => (
+            <div className="fc-ratio" key={r.label}>
+              <div className="fc-ratio-label">{r.label}</div>
+              <div className={`fc-ratio-val ${r.quality ?? ''}`}>{r.value}</div>
+            </div>
+          ))}
           {kpisIA.map(([key, value]) => (
             <div className="fc-ratio" key={key}>
               <div className="fc-ratio-label">{String(key).replace(/_/g, ' ')}</div>
@@ -176,51 +217,35 @@ export default function FundCard({ position }) {
         </div>
       )}
 
-      {/* Comparable peer */}
-      {comparable_ev_ebitda && (
-        <div className="fc-comparable">
-          vs {comparable_ev_ebitda.nombre}:{' '}
-          <span className="fc-comparable-val">{comparable_ev_ebitda.valor}</span>
-        </div>
-      )}
+      {tesis && <div className="fc-tesis" style={{ margin: '2px 0 10px' }}>{tesis}</div>}
 
-      {/* Ratios array (legacy / Claude analysis) */}
-      {ratios.length > 0 && (
-        <div className="fc-ratios">
-          {ratios.map(r => (
-            <div className="fc-ratio" key={r.label}>
-              <div className="fc-ratio-label">{r.label}</div>
-              <div className={`fc-ratio-val ${r.quality ?? ''}`}>{r.value}</div>
-            </div>
-          ))}
-        </div>
-      )}
-
-      {tesis && <div className="fc-tesis">{tesis}</div>}
-
-      {/* Escenarios de precio — estimación IA (distinto del target de analistas) */}
-      {(bearVal || baseVal || bullVal) && (
-        <div>
+      {/* Escenarios de precio — filas con precio grande, % implícito y descripción */}
+      {tieneEscenarios && (
+        <div style={{ marginBottom: 10 }}>
           <div className="fc-sce-cap">Escenarios de precio · estimación IA</div>
-          <div className="fc-scenarios">
-            {bearVal && (
-              <div className="fc-sce">
-                <div className="fc-sce-label" style={{ color: 'var(--red)' }}>Pesimista</div>
-                <div className="fc-sce-val bear">{bearVal}</div>
-              </div>
-            )}
-            {baseVal && (
-              <div className="fc-sce">
-                <div className="fc-sce-label">Base</div>
-                <div className="fc-sce-val base">{baseVal}</div>
-              </div>
-            )}
-            {bullVal && (
-              <div className="fc-sce">
-                <div className="fc-sce-label" style={{ color: 'var(--buy)' }}>Optimista</div>
-                <div className="fc-sce-val bull">{bullVal}</div>
-              </div>
-            )}
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 7 }}>
+            {ESC_META.map(([k, label, color]) => {
+              const e = parseEscenario(escenarios[k])
+              if (!e?.precio) return null
+              const up = upsideEscenario(e.precio, an?.precio_ref)
+              return (
+                <div key={k} style={{
+                  background: 'var(--surface2)', border: '1px solid var(--border)',
+                  borderLeft: `3px solid ${color}`, borderRadius: '0 8px 8px 0', padding: '8px 11px',
+                }}>
+                  <div style={{ display: 'flex', alignItems: 'baseline', gap: 9, flexWrap: 'wrap' }}>
+                    <span style={{ fontSize: 10, color, textTransform: 'uppercase', letterSpacing: '.06em', minWidth: 58 }}>{label}</span>
+                    <span style={{ fontFamily: "'IBM Plex Mono', monospace", fontSize: 15, fontWeight: 700, color: 'var(--text)' }}>{e.precio}</span>
+                    {up != null && (
+                      <span style={{ fontSize: 10, color: up >= 0 ? 'var(--buy)' : 'var(--red)' }}>
+                        {up >= 0 ? '+' : ''}{up.toFixed(0)}%
+                      </span>
+                    )}
+                  </div>
+                  {e.desc && <div style={{ fontSize: 11, color: 'var(--muted2)', lineHeight: 1.5, marginTop: 3 }}>{e.desc}</div>}
+                </div>
+              )
+            })}
           </div>
         </div>
       )}
