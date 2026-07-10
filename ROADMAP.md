@@ -239,12 +239,23 @@ Trabajo hecho que no estaba documentado. **Sin commitear aún** (commit tras val
 - ✅ **FIX CRÍTICO · yfinance rate-limited desde Cloud Run:** el refresh de fundamentales escribía 0 tickers desde el 13/06 (Yahoo bloqueaba IPs de GCP con "Too Many Requests" y el botón decía "✓" igual). Fix: `yfinance>=0.2.61` (impersonación curl_cffi) + lotes de 2 espaciados (1,2s) + reintento único (6s) + **toast honesto** (informa N actualizados o el rate-limit). Verificado post-fix: 15/22 tickers con `analistas` (los 7 restantes sin cobertura Yahoo).
 - ✅ **KPIs homogéneos en FundCard:** siempre los 3 recuadros fijos (Ganancia operativa · Valuación · Margen, yfinance); los KPIs variables del análisis IA pasan a chips secundarios. Bloque analistas pulido (singular "1 analista", sin "Recomendación: none", sin rango degenerado).
 - ✅ **Táctico · nueva comunicación:** bloque estructurado por posición (`position.tactico`): chips de **salud de tesis** + **urgencia** (con rótulo), justificación como texto, **"En contra:"** (mejor_argumento_en_contra) y **"Esperar:"** (condicion_espera) — datos que ya se guardaban y no se mostraban. Complementa la barra de banda.
-- ✅ **Contratos:** `analisis-fundamental.md` exige precio en cada escenario ("$X — desc"); `analisis-tactico-cp.md` pide justificación liderada por el porqué de fondo (banda como contexto liviano) y redacción para usuario final en los campos visibles.
-- ⏳ Escenarios con precio + justificaciones nuevas: aparecen al **regenerar** los análisis en claude.ai con los contratos actualizados.
-- ⏳ **APK v31** (este último batch es solo frontend; v30 no lo tiene).
+- ✅ **Contratos:** `analisis-fundamental.md` exige precio en cada escenario ("$X — desc"); `analisis-tactico-cp.md` pide justificación liderada por el porqué de fondo (banda como contexto liviano) y redacción para usuario final.
+
+**Sesión 2026-07-05 (reagrupamiento · detalle táctico v2 · gráfico por posición · v31–v33):**
+- ✅ **v31 · Grupos temáticos por SECTOR real** (no por tipo de instrumento): eliminado "CEDEARs Internacionales". XOM→Energía·Upstream, NVDA/GOOGL→Tecnología, LAR→**Minería** (sin subtipo, mañana puede haber cobre/oro), + Bancos y Financieras, Consumo Defensivo, Real Estate, Índices y ETFs, Holdings. En `usePortfolio._GRUPO_TEMATICO`/`_GRUPO_ORDEN`.
+- ✅ **Análisis fundamental regenerado** → `AnalisisTactico_Y_Fundamental/AF050726.json` (22 tickers, escenarios con precio anclados al consenso de analistas, extendido de 4 párrafos). *Pendiente: pegarlo en Paso 2.*
+- ✅ **v32 · Detalle táctico v2:** chips (acción/salud/urgencia) + grilla de contexto (**Rol en tu contrato**, Rend. total USD, **Próx. catalizador** con fecha desde el calendario, **Consenso analistas**). La banda es UN dato más (no el único).
+- ✅ **v32 · Gráfico de precio por posición** de renta variable (estilo histórico del dólar): endpoint `GET /api/prices/ticker-series/{yf_ticker}` (yfinance 5y, caché 6h, on-demand al expandir) + caché de cliente en `HistoryChart` (prop `path` por serie).
+- ✅ **v32 · FundCard desapilada:** comparable dentro del recuadro Valuación; UNA fila de chips (ratios Yahoo + extras IA deduplicados, máx 4); escenarios como filas con **precio grande + % implícito vs precio actual + descripción diferenciada**.
+- ✅ **v33 · Fix banda vertical** (la había vuelto horizontal sin pedido → revertida a vertical) + **fix crítico: `stopPropagation` en `.tr-detail`** — el click en los controles del detalle (botones de período del gráfico, links) burbujeaba al `onClick` del row y **colapsaba la card** (pasaba en web y apk). Ahora se colapsa solo desde el header.
+
+**Pendientes de contenido/validación (no bloquean código):**
+- ⏳ **Pegar `AF050726.json`** en Paso 2 → activa escenarios con precio + extendido profundo en las cards.
+- ⏳ **Regenerar el táctico** en claude.ai con el contrato actualizado y pegarlo → el bloque táctico nuevo tendrá la redacción para usuario final (hoy muestra el táctico viejo).
+- ⏳ **Validar v33** en el teléfono.
 
 **Cierre:**
-- ⏳ **Merge `feat/rediseno-ux-mobile` → master** (pendiente de validación de v30/v31 + web).
+- ⏳ **Merge `feat/rediseno-ux-mobile` → master** (rama pusheada a GitHub; pendiente de validación del conjunto v26–v33).
 
 ---
 
