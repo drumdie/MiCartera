@@ -51,7 +51,7 @@ function TacticoResumen({ position }) {
       <div style={{ fontSize: 12, color: color ?? 'var(--text)', marginTop: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{val}</div>
     </div>
   )
-  const hayGrilla = rol || rend != null || cat || an || position.banda
+  const hayGrilla = rol || rend != null || cat || an
 
   return (
     <div>
@@ -72,30 +72,36 @@ function TacticoResumen({ position }) {
           {rend != null && item('Rend. total USD', `${rend >= 0 ? '+' : ''}${Number(rend).toFixed(1).replace('.', ',')}%`, rend >= 0 ? 'var(--buy)' : 'var(--red)')}
           {cat && item('Próx. catalizador', `${cat.evento} · ${_fmtDDMM(cat.fecha)}`)}
           {an && item('Consenso analistas', `${_pref(an.moneda)} ${Number(an.target).toLocaleString('es-AR')}${an.upside != null ? ` · ${an.upside >= 0 ? '+' : ''}${Number(an.upside).toFixed(1).replace('.', ',')}%` : ''}`)}
-          {position.banda && (
-            <BandaBar
-              min={position.banda.min}
-              objetivo={position.banda.objetivo}
-              max={position.banda.max}
-              actual={position.pct_cartera}
-            />
-          )}
         </div>
       )}
 
-      {t.justificacion && (
-        <div className="tr-tesis" style={{ border: 'none', margin: 0, paddingTop: 0 }}>{t.justificacion}</div>
-      )}
-      {t.en_contra && (
-        <div className="tr-tesis" style={{ border: 'none', margin: '6px 0 0', paddingTop: 0 }}>
-          <b style={{ color: 'var(--warn)', fontWeight: 600 }}>En contra:</b> {t.en_contra}
+      {/* Texto táctico + banda VERTICAL al costado (como estaba: la banda es un dato más) */}
+      <div style={{ display: 'flex', gap: 12, alignItems: 'stretch' }}>
+        <div style={{ flex: 1, minWidth: 0 }}>
+          {t.justificacion && (
+            <div className="tr-tesis" style={{ border: 'none', margin: 0, paddingTop: 0 }}>{t.justificacion}</div>
+          )}
+          {t.en_contra && (
+            <div className="tr-tesis" style={{ border: 'none', margin: '6px 0 0', paddingTop: 0 }}>
+              <b style={{ color: 'var(--warn)', fontWeight: 600 }}>En contra:</b> {t.en_contra}
+            </div>
+          )}
+          {t.condicion_espera && t.condicion_espera !== '—' && (
+            <div className="tr-tesis" style={{ border: 'none', margin: '6px 0 0', paddingTop: 0 }}>
+              <b style={{ color: 'var(--accent3, var(--muted2))', fontWeight: 600 }}>Esperar:</b> {t.condicion_espera}
+            </div>
+          )}
         </div>
-      )}
-      {t.condicion_espera && t.condicion_espera !== '—' && (
-        <div className="tr-tesis" style={{ border: 'none', margin: '6px 0 0', paddingTop: 0 }}>
-          <b style={{ color: 'var(--accent3, var(--muted2))', fontWeight: 600 }}>Esperar:</b> {t.condicion_espera}
-        </div>
-      )}
+        {position.banda && (
+          <BandaBar
+            ticker={position.ticker}
+            min={position.banda.min}
+            objetivo={position.banda.objetivo}
+            max={position.banda.max}
+            actual={position.pct_cartera}
+          />
+        )}
+      </div>
     </div>
   )
 }
@@ -189,7 +195,9 @@ export default function AssetRow({ position, expanded, onToggle, isCedear, isBon
         </div>
       </div>
 
-      <div className="tr-detail">
+      {/* stopPropagation: los controles del detalle (gráfico, botones de período, links)
+          NO deben burbujear al onClick del row y colapsar la card. Se colapsa desde el header. */}
+      <div className="tr-detail" onClick={e => e.stopPropagation()}>
         <div className="tr-grid">
           <div>
             <div className="tg-label">Cantidad</div>
